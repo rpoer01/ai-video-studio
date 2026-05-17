@@ -1,0 +1,10 @@
+flask
+imageio-ffmpeg
+moviepy
+numpy
+opencv-python
+openai-whisper
+pillow
+pythainlp
+requests
+yt-dlp

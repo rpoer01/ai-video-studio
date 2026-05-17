@@ -1,0 +1,10 @@
+__pycache__/
+downloads/
+outputs/
+ffmpeg/
+fonts/
+*.mp4
+*.srt
+*.log
+*_TEMP_MPY_*
+*TEMP_MPY*
