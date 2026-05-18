@@ -337,7 +337,7 @@ CAPTION_FONTS = {
 }
 
 CAPTION_ANIMATIONS = {
-    "Smooth Pop": {"mode": "pop", "fade": 0.04, "slide": 8, "start_scale": 0.9, "end_scale": 0.98},
+    "Smooth Pop": {"mode": "pop", "fade": 0.03, "slide": 6, "start_scale": 0.85, "end_scale": 1.0},
     "Slide Fade": {"mode": "slide", "fade": 0.05, "slide": 15, "start_scale": 1.0, "end_scale": 1.0},
     "Fade Only": {"mode": "fade", "fade": 0.04, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
     "None": {"mode": "none", "fade": 0.0, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
@@ -451,24 +451,23 @@ def _normalize_caption_words(words: list[dict[str, Any]], fallback_text: str = "
         
     source_text = fallback_text or _caption_join([word["word"] for word in visible])
     
-    # AssemblyAI provides precise timestamps per word. 
-    # For English, we should NOT re-time them, just use what AI gave us.
-    if not _has_thai(source_text):
-        return [
-            {
-                "word": str(word["word"]).strip().upper(),
-                "start": float(word["start"]),
-                "end": float(word["end"])
-            }
-            for word in visible
-        ]
+    # TRIPLE A STYLE: For Thai, we MUST use our reliable tokenizer to ensure words are valid.
+    # We then distribute the total segment time across these valid words.
+    if _has_thai(source_text):
+        start = min((float(word.get("start", 0.0)) for word in visible), default=0.0)
+        end = max((float(word.get("end", start + 0.1)) for word in visible), default=start + 0.1)
+        tokens = _caption_tokens_from_text(source_text)
+        return _retime_caption_tokens(tokens, start, end)
 
-    # For Thai, we might need to split a long string into tokens.
-    # We use the total time of the "visible" group and distribute it.
-    start = min((float(word.get("start", 0.0)) for word in visible), default=0.0)
-    end = max((float(word.get("end", start + 0.1)) for word in visible), default=start + 0.1)
-    tokens = _caption_tokens_from_text(source_text)
-    return _retime_caption_tokens(tokens, start, end)
+    # For English/Non-Thai, we can trust the AI's word-level timestamps.
+    return [
+        {
+            "word": str(word["word"]).strip().upper(),
+            "start": float(word["start"]),
+            "end": float(word["end"])
+        }
+        for word in visible
+    ]
 
 
 def _caption_phrase_groups(words: list[dict[str, Any]], max_tokens: int = 3) -> list[list[dict[str, Any]]]:
@@ -516,43 +515,34 @@ def _wrap_words_for_width(words: list[str], draw, font, max_width: int, stroke_w
     return lines
 
 def _layout_caption_words(words: list[str], style, video_w: int, video_h: int):
-    max_w = int(video_w * 0.90)
-    max_h = int(video_h * 0.20)
-    min_size = max(54, int(video_w * 0.055))
-    font_size = min(style["font_size"], int(video_w * 0.125))
+    # TRIPLE A STYLE: Force SINGLE LINE for maximum impact
+    max_w = int(video_w * 0.92) # Use more of the width
+    min_size = max(60, int(video_w * 0.06)) # Don't let it get too small
+    font_size = min(style["font_size"], int(video_w * 0.14)) # Start big
     scratch = Image.new("RGBA", (16, 16))
     draw = ImageDraw.Draw(scratch)
 
     while font_size >= min_size:
         font = _load_caption_font(style["font"], font_size)
-        stroke_width = max(4, int(font_size * 0.075))
-        lines = _wrap_words_for_width(words, draw, font, max_w, stroke_width)
-        line_metrics = []
-        total_h = 0
-        max_line_w = 0
-        gap = max(4, int(font_size * 0.08))
-        for line in lines:
-            line_w = _caption_text_width(draw, line, font)
-            bbox = _text_bbox(draw, _caption_join(line), font, stroke_width)
+        stroke_width = max(6, int(font_size * 0.08)) # Thicker strokes for better legibility
+        
+        # Enforce single line: Don't wrap words
+        lines = [words] 
+        line_w = _caption_text_width(draw, words, font)
+        
+        if line_w <= max_w:
+            bbox = _text_bbox(draw, _caption_join(words), font, stroke_width)
             line_h = bbox[3] - bbox[1]
-            line_metrics.append((line_w, line_h))
-            total_h += line_h
-            max_line_w = max(max_line_w, int(line_w))
-        total_h += gap * max(0, len(lines) - 1)
-        if max_line_w <= max_w and total_h <= max_h:
-            return font, stroke_width, lines, line_metrics, gap
-        font_size -= 4
+            return font, stroke_width, lines, [(line_w, line_h)], 0
+            
+        font_size -= 6
 
+    # Fallback to min_size if still too wide (extremely rare with short chunks)
     font = _load_caption_font(style["font"], min_size)
-    stroke_width = max(4, int(min_size * 0.075))
-    lines = _wrap_words_for_width(words, draw, font, max_w, stroke_width)
-    line_metrics = []
-    gap = max(4, int(min_size * 0.08))
-    for line in lines:
-        line_w = _caption_text_width(draw, line, font)
-        bbox = _text_bbox(draw, _caption_join(line), font, stroke_width)
-        line_metrics.append((line_w, bbox[3] - bbox[1]))
-    return font, stroke_width, lines, line_metrics, gap
+    stroke_width = max(6, int(min_size * 0.08))
+    line_w = _caption_text_width(draw, words, font)
+    bbox = _text_bbox(draw, _caption_join(words), font, stroke_width)
+    return font, stroke_width, [words], [(line_w, bbox[3] - bbox[1])], 0
 
 def _render_karaoke_caption_image(words: list[str], active_index: int, style, video_w: int, video_h: int) -> Image.Image:
     font, stroke_width, lines, line_metrics, gap = _layout_caption_words(words, style, video_w, video_h)
@@ -699,7 +689,7 @@ def _caption_clip(
 
 
 def create_pro_subtitle_clips(full_text, words, style, video_w, video_h, pos_x, pos_y, animation_name="Smooth Pop"):
-    """Create karaoke captions with seamless transitions (no flickering)."""
+    """Create karaoke captions with REAL-TIME sync to audio timestamps."""
     words = _normalize_caption_words(words, fallback_text=full_text)
     clean_words = [w["word"].strip() for w in words if w.get("word", "").strip()]
     if not clean_words:
@@ -708,7 +698,9 @@ def create_pro_subtitle_clips(full_text, words, style, video_w, video_h, pos_x, 
     clips = []
     visible_words = [w for w in words if w.get("word", "").strip()]
     
-    # To prevent flickering, each clip's end time should be the next clip's start time
+    # TRIPLE A REAL-TIME SYNC: 
+    # Instead of bridging gaps, we use the EXACT timestamps for each word's highlight.
+    # This ensures that if there's a pause, the highlight doesn't jump ahead.
     for active_index, word_info in enumerate(visible_words):
         if not word_info.get("word", "").strip():
             continue
@@ -717,13 +709,8 @@ def create_pro_subtitle_clips(full_text, words, style, video_w, video_h, pos_x, 
         x_pos, y_pos = _safe_caption_position_size(image.size, video_w, video_h, pos_x, pos_y)
         
         start = word_info["start"]
-        # Bridge the gap: If there's another word, end this clip when the next one starts
-        if active_index < len(visible_words) - 1:
-            end = visible_words[active_index + 1]["start"]
-        else:
-            end = word_info["end"]
-            
-        duration = max(0.04, end - start)
+        end = word_info["end"]
+        duration = max(0.01, end - start)
         
         clip = _caption_clip(
             image,
@@ -732,8 +719,9 @@ def create_pro_subtitle_clips(full_text, words, style, video_w, video_h, pos_x, 
             x_pos,
             y_pos,
             animation_name,
-            # Animation only on phrase entrance/exit for professional look
+            # Entrance animation only on the first word of the group
             animate_in=active_index == 0,
+            # Exit animation only on the last word of the group
             animate_out=active_index == len(visible_words) - 1,
         )
         clips.append(clip)
@@ -789,30 +777,11 @@ def render_pro_video(
         if not filtered_words:
             continue
 
-        # 2. Advanced Grouping (from CLI study)
-        # We group words into chunks that are small enough to be readable but long enough to provide context.
-        chunks = []
-        current_chunk_words = []
-        current_len = 0
-        
+        # TRIPLE A STYLE: Strict 3-word grouping for maximum impact
+        # We use _caption_phrase_groups which handles Thai tokenization and retiming automatically.
         is_thai_segment = _has_thai(seg.get("text", ""))
-        max_chunk_len = 22 if is_thai_segment else 28 # Character limit for Thai, Word-ish for English
-        max_word_count = 3 if is_thai_segment else 5
-        
-        for w in filtered_words:
-            w_text = str(w["word"]).strip()
-            # If adding this word exceeds limits, start a new chunk
-            if (current_chunk_words and 
-                (current_len + len(w_text) > max_chunk_len or len(current_chunk_words) >= max_word_count)):
-                chunks.append(current_chunk_words)
-                current_chunk_words = [w]
-                current_len = len(w_text)
-            else:
-                current_chunk_words.append(w)
-                current_len += len(w_text) + (0 if is_thai_segment else 1)
-        
-        if current_chunk_words:
-            chunks.append(current_chunk_words)
+        chunk_size = 3 if is_thai_segment else 5
+        chunks = _caption_phrase_groups(filtered_words, max_tokens=chunk_size)
 
         # 3. Render Karaoke Chunks
         for group in chunks:
@@ -820,7 +789,7 @@ def render_pro_video(
             if not group_text.strip():
                 continue
                 
-            # create_pro_subtitle_clips now handles seamless transitions within the group
+            # For Thai Triple-A style, we enforce SINGLE LINE ONLY.
             group_clips = create_pro_subtitle_clips(group_text, group, style, video.w, video.h, pos_x, pos_y, animation_name)
             subtitle_clips.extend(group_clips)
 
