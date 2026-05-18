@@ -301,20 +301,20 @@ def _latest_output_result() -> dict[str, str] | None:
 SUBTITLE_STYLES = {
     "Vibrant TikTok": {
         "font": font_paths.get("Kanit-Bold", "Arial"),
-        "font_size": 126,
+        "font_size": 140,
         "color": "white",
         "highlight_color": "#25ff6a",
         "stroke_color": "black",
-        "stroke_width": 8,
+        "stroke_width": 12,
         "shadow": True
     },
     "Gamer Pro": {
         "font": font_paths.get("Prompt-Bold", "Arial"),
-        "font_size": 132,
+        "font_size": 145,
         "color": "white",
         "highlight_color": "#fff200",
         "stroke_color": "black",
-        "stroke_width": 9,
+        "stroke_width": 14,
         "shadow": True
     },
     "Minimal Dark": {
@@ -337,9 +337,9 @@ CAPTION_FONTS = {
 }
 
 CAPTION_ANIMATIONS = {
-    "Smooth Pop": {"mode": "pop", "fade": 0.16, "slide": 14, "start_scale": 0.94, "end_scale": 0.985},
-    "Slide Fade": {"mode": "slide", "fade": 0.18, "slide": 28, "start_scale": 1.0, "end_scale": 1.0},
-    "Fade Only": {"mode": "fade", "fade": 0.14, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
+    "Smooth Pop": {"mode": "pop", "fade": 0.04, "slide": 8, "start_scale": 0.9, "end_scale": 0.98},
+    "Slide Fade": {"mode": "slide", "fade": 0.05, "slide": 15, "start_scale": 1.0, "end_scale": 1.0},
+    "Fade Only": {"mode": "fade", "fade": 0.04, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
     "None": {"mode": "none", "fade": 0.0, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
 }
 
@@ -446,14 +446,25 @@ def _retime_caption_tokens(tokens: list[str], start: float, end: float) -> list[
 
 def _normalize_caption_words(words: list[dict[str, Any]], fallback_text: str = "") -> list[dict[str, Any]]:
     visible = [word for word in words if str(word.get("word", "")).strip()]
+    if not visible:
+        return []
+        
     source_text = fallback_text or _caption_join([word["word"] for word in visible])
+    
+    # AssemblyAI provides precise timestamps per word. 
+    # For English, we should NOT re-time them, just use what AI gave us.
     if not _has_thai(source_text):
         return [
-            {**word, "word": str(word["word"]).strip().upper()}
+            {
+                "word": str(word["word"]).strip().upper(),
+                "start": float(word["start"]),
+                "end": float(word["end"])
+            }
             for word in visible
-            if str(word.get("word", "")).strip()
         ]
 
+    # For Thai, we might need to split a long string into tokens.
+    # We use the total time of the "visible" group and distribute it.
     start = min((float(word.get("start", 0.0)) for word in visible), default=0.0)
     end = max((float(word.get("end", start + 0.1)) for word in visible), default=start + 0.1)
     tokens = _caption_tokens_from_text(source_text)
@@ -688,7 +699,7 @@ def _caption_clip(
 
 
 def create_pro_subtitle_clips(full_text, words, style, video_w, video_h, pos_x, pos_y, animation_name="Smooth Pop"):
-    """Create karaoke captions. Animation runs only at phrase enter/exit, not on every active word."""
+    """Create karaoke captions with seamless transitions (no flickering)."""
     words = _normalize_caption_words(words, fallback_text=full_text)
     clean_words = [w["word"].strip() for w in words if w.get("word", "").strip()]
     if not clean_words:
@@ -696,19 +707,32 @@ def create_pro_subtitle_clips(full_text, words, style, video_w, video_h, pos_x, 
 
     clips = []
     visible_words = [w for w in words if w.get("word", "").strip()]
+    
+    # To prevent flickering, each clip's end time should be the next clip's start time
     for active_index, word_info in enumerate(visible_words):
         if not word_info.get("word", "").strip():
             continue
-        image = _render_karaoke_caption_image(clean_words, min(active_index, len(clean_words) - 1), style, video_w, video_h)
+            
+        image = _render_karaoke_caption_image(clean_words, active_index, style, video_w, video_h)
         x_pos, y_pos = _safe_caption_position_size(image.size, video_w, video_h, pos_x, pos_y)
-        duration = max(0.08, word_info["end"] - word_info["start"])
+        
+        start = word_info["start"]
+        # Bridge the gap: If there's another word, end this clip when the next one starts
+        if active_index < len(visible_words) - 1:
+            end = visible_words[active_index + 1]["start"]
+        else:
+            end = word_info["end"]
+            
+        duration = max(0.04, end - start)
+        
         clip = _caption_clip(
             image,
-            word_info["start"],
+            start,
             duration,
             x_pos,
             y_pos,
             animation_name,
+            # Animation only on phrase entrance/exit for professional look
             animate_in=active_index == 0,
             animate_out=active_index == len(visible_words) - 1,
         )
@@ -730,40 +754,75 @@ def render_pro_video(
 ) -> dict[str, str]:
     style = dict(SUBTITLE_STYLES.get(style_name, SUBTITLE_STYLES["Vibrant TikTok"]))
     style["font"] = CAPTION_FONTS.get(caption_font_name, style["font"])
-    print(f"[*] Loading AI ({model_name})...")
-    model = ai_models.get_whisper_model(model_name)
+    print(f"[*] Loading AssemblyAI (Professional Sync)...")
     
-    transcribe_opts = {"fp16": False, "word_timestamps": True, "verbose": False}
-    if language: transcribe_opts["language"] = language
-    if translate: transcribe_opts["task"] = "translate"
-        
-    print(f"[*] Analyzing audio for sync...")
-    result = model.transcribe(video_path, **transcribe_opts)
+    # AssemblyAI handles transcription and word sync much better than Whisper for high-end production
+    print(f"[*] Analyzing audio with AssemblyAI for studio-quality sync...")
+    try:
+        result = ai_models.transcribe_with_assemblyai(video_path, language=language)
+    except Exception as e:
+        print(f"[!] AssemblyAI failed, falling back to local Whisper: {e}")
+        model = ai_models.get_whisper_model(model_name)
+        transcribe_opts = {"fp16": False, "word_timestamps": True, "verbose": False}
+        if language: transcribe_opts["language"] = language
+        if translate: transcribe_opts["task"] = "translate"
+        result = model.transcribe(video_path, **transcribe_opts)
     
     video = VideoFileClip(video_path)
     subtitle_clips = []
     
-    # Process each transcribed segment
+    # Professional Pacing: Group words into readable chunks (Studio Style)
     for seg in result["segments"]:
         words = seg.get("words", [])
         if not words:
-            # Fallback for models without word timestamps
             words = [{"word": seg["text"], "start": seg["start"], "end": seg["end"]}]
             
-        # Keep Thai captions as real word groups, not spaced-out characters.
-        normalized_words = _normalize_caption_words(words, fallback_text=seg.get("text", ""))
-        max_group_size = 3 if _has_thai(seg.get("text", "")) else 5
-        i = 0
-        while i < len(normalized_words):
-            group = normalized_words[i:i + max_group_size]
+        # 1. Clean and filter words
+        filtered_words = []
+        for w in words:
+            word_text = str(w.get("word", "")).strip()
+            confidence = w.get("confidence", 1.0)
+            if (confidence < 0.35 and len(word_text) > 3) or word_text.lower().endswith((".jpg", ".png", ".mp4", ".exe")):
+                continue
+            filtered_words.append(w)
+            
+        if not filtered_words:
+            continue
+
+        # 2. Advanced Grouping (from CLI study)
+        # We group words into chunks that are small enough to be readable but long enough to provide context.
+        chunks = []
+        current_chunk_words = []
+        current_len = 0
+        
+        is_thai_segment = _has_thai(seg.get("text", ""))
+        max_chunk_len = 22 if is_thai_segment else 28 # Character limit for Thai, Word-ish for English
+        max_word_count = 3 if is_thai_segment else 5
+        
+        for w in filtered_words:
+            w_text = str(w["word"]).strip()
+            # If adding this word exceeds limits, start a new chunk
+            if (current_chunk_words and 
+                (current_len + len(w_text) > max_chunk_len or len(current_chunk_words) >= max_word_count)):
+                chunks.append(current_chunk_words)
+                current_chunk_words = [w]
+                current_len = len(w_text)
+            else:
+                current_chunk_words.append(w)
+                current_len += len(w_text) + (0 if is_thai_segment else 1)
+        
+        if current_chunk_words:
+            chunks.append(current_chunk_words)
+
+        # 3. Render Karaoke Chunks
+        for group in chunks:
             group_text = _caption_join([w["word"].strip() for w in group])
             if not group_text.strip():
-                i += 1
                 continue
                 
+            # create_pro_subtitle_clips now handles seamless transitions within the group
             group_clips = create_pro_subtitle_clips(group_text, group, style, video.w, video.h, pos_x, pos_y, animation_name)
             subtitle_clips.extend(group_clips)
-            i += max_group_size
 
     output_filename = os.path.splitext(os.path.basename(video_path))[0] + f"{output_suffix}.mp4"
     output_path = os.path.join(OUTPUT_DIR, output_filename)

@@ -6,12 +6,13 @@
 
 ## 🛠 เทคโนโลยีและโมดูลที่ใช้ (Core Modules)
 
-1.  **OpenAI Whisper**: ใช้ในการถอดความเสียงเป็นข้อความ (Speech-to-Text) รองรับภาษาไทยได้แม่นยำสูง
-2.  **MoviePy**: ใช้ในการจัดการไฟล์วิดีโอ ตัดต่อ (Subclip), รวมคลิป (Concatenate), และใส่ Text Overlay
-3.  **yt-dlp**: ใช้ในการดาวน์โหลดวิดีโอจาก URL ต่างๆ เช่น YouTube, Facebook, TikTok
-4.  **Flask**: ใช้สร้าง Web Interface สำหรับการใช้งานที่ง่ายผ่าน Browser
-5.  **NumPy**: ใช้ในการประมวลผลสัญญาณเสียงเพื่อหา Audio Peaks (ช่วงที่มีเสียงดัง)
-6.  **ImageMagick**: จำเป็นสำหรับ MoviePy ในการสร้าง TextClip (ซับไทเทิล)
+1.  **AssemblyAI**: ใช้ในการถอดความเสียงเป็นข้อความ (Speech-to-Text) ระดับ Professional ให้ตำแหน่งเวลาของแต่ละคำแม่นยำสูง (Word-level timestamps) และจัดการจังหวะได้ดีกว่า
+2.  **OpenAI Whisper**: (Fallback) ใช้เป็นระบบสำรองในกรณีที่ไม่ได้เชื่อมต่ออินเทอร์เน็ตหรือ API มีปัญหา
+3.  **MoviePy**: ใช้ในการจัดการไฟล์วิดีโอ ตัดต่อ (Subclip), รวมคลิป (Concatenate), และใส่ Text Overlay
+4.  **yt-dlp**: ใช้ในการดาวน์โหลดวิดีโอจาก URL ต่างๆ เช่น YouTube, Facebook, TikTok
+5.  **Flask**: ใช้สร้าง Web Interface สำหรับการใช้งานที่ง่ายผ่าน Browser
+6.  **NumPy**: ใช้ในการประมวลผลสัญญาณเสียงเพื่อหา Audio Peaks (ช่วงที่มีเสียงดัง)
+7.  **ImageMagick**: จำเป็นสำหรับ MoviePy ในการสร้าง TextClip (ซับไทเทิล)
 
 ---
 

@@ -24,8 +24,8 @@ if magick_path:
 else:
     print("Warning: ImageMagick (magick.exe) not found in standard paths.")
 
-# Now we can import moviepy and whisper
-import whisper
+# Now we can import moviepy and ai_models
+import ai_models
 import imageio_ffmpeg
 from moviepy import VideoFileClip, TextClip, CompositeVideoClip
 
@@ -98,27 +98,29 @@ def log(msg):
 def process_video(video_path):
     log(f"--- กำลังเริ่มประมวลผลไฟล์: {video_path} ---")
     
-    # 1. Load Whisper
-    log("1. กำลังโหลด AI Model (Whisper base)...")
-    model = whisper.load_model("base")
+    # 1. Transcribe with AssemblyAI
+    log("1. กำลังโหลด AI Model (AssemblyAI Pro)...")
+    try:
+        result = ai_models.transcribe_with_assemblyai(video_path)
+    except Exception as e:
+        log(f"   ! AssemblyAI ล้มเหลว: {e}. กำลังสลับไปใช้ Whisper (base)...")
+        model = ai_models.get_whisper_model("base")
+        result = model.transcribe(video_path, fp16=False, word_timestamps=True, verbose=False)
     
-    # 2. Transcribe
-    log("2. กำลังถอดเสียงจากวิดีโอ (Speech-to-Text)...")
-    result = model.transcribe(video_path, fp16=False, word_timestamps=True, verbose=False)
     segments = result['segments']
     entries = build_word_entries(segments)
     
     if not entries:
-        log("   ! ไม่พบเสียงพูดในคลิป (Whisper detected no speech)")
+        log("   ! ไม่พบเสียงพูดในคลิป")
         entries = [{'start': 1.0, 'end': 5.0, 'text': '--- ทดสอบระบบซับไทเทิล ---'}]
     
-    # 3. Generate SRT
+    # 2. Generate SRT
     srt_path = os.path.splitext(video_path)[0] + ".srt"
     generate_srt(segments, srt_path)
-    log(f"3. สร้างไฟล์ซับไทเทิลเสร็จแล้ว: {srt_path}")
+    log(f"2. สร้างไฟล์ซับไทเทิลเสร็จแล้ว: {srt_path}")
     
-    # 4. Burn-in Subtitles
-    log("4. กำลังพยายามรวมซับไทเทิลเข้ากับวิดีโอ...")
+    # 3. Burn-in Subtitles
+    log("3. กำลังพยายามรวมซับไทเทิลเข้ากับวิดีโอ...")
     
     # Use User specified Kanit font path
     font_path = r"c:\Users\zazqi\Downloads\Kanit\Kanit-Black.ttf"

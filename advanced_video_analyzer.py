@@ -285,7 +285,15 @@ def analyze_and_render(
         with VideoFileClip(video_path) as video:
             duration = float(video.duration)
             audio_profile = _audio_profile(video)
-        transcript = model.transcribe(video_path, fp16=False, language=language or None, verbose=False)
+        
+        print(f"[*] Analyzing source {index+1} with AssemblyAI...")
+        try:
+            transcript = ai_models.transcribe_with_assemblyai(video_path, language=language)
+        except Exception as e:
+            print(f"[!] AssemblyAI failed for source {index+1}, falling back to local Whisper: {e}")
+            model = ai_models.get_whisper_model(model_name)
+            transcript = model.transcribe(video_path, fp16=False, language=language or None, verbose=False)
+            
         transcript_segments = transcript.get("segments", [])
         visual_profile = _visual_profile(video_path, duration)
         candidates = _build_candidates(

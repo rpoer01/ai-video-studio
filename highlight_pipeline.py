@@ -16,8 +16,14 @@ def cut_highlight_video(
     audio_threshold: float = 2.5,
 ) -> dict:
     """Transcribe, detect, plan, and render a highlight clip close to target_duration."""
-    model = ai_models.get_whisper_model(model_name)
-    transcript = model.transcribe(video_path, fp16=False, language=language or None, verbose=False)
+    print(f"[*] Analyzing video with AssemblyAI for highlight detection...")
+    try:
+        transcript = ai_models.transcribe_with_assemblyai(video_path, language=language)
+    except Exception as e:
+        print(f"[!] AssemblyAI failed for highlights, falling back to local Whisper: {e}")
+        model = ai_models.get_whisper_model(model_name)
+        transcript = model.transcribe(video_path, fp16=False, language=language or None, verbose=False)
+    
     transcript_segments = transcript.get("segments", [])
 
     keyword_segments = highlight_engine.detect_highlights_by_keywords(transcript_segments, category=category)
