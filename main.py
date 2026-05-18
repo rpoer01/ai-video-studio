@@ -101,6 +101,7 @@ def _parse_process_form(form) -> dict[str, Any]:
         "video_input": video_input,
         "source_type": form.get("source_type", "url"),
         "mode": form.get("mode", "subtitles_only"),
+        "engine": form.get("engine", "assemblyai"),
         "model_name": form.get("model_name", "base"),
         "language": form.get("language", ""),
         "style_name": form.get("style_name", "Vibrant TikTok"),
@@ -111,6 +112,7 @@ def _parse_process_form(form) -> dict[str, Any]:
         "max_duration": max_duration,
         "pos_x": float(form.get("pos_x", "0.5")),
         "pos_y": float(form.get("pos_y", "0.75")),
+        "thai_spacing": form.get("thai_spacing") == "on"
     }
 
 
@@ -131,6 +133,7 @@ def _parse_advanced_form(form) -> dict[str, Any]:
     return {
         "video_paths": video_paths,
         "brief": form.get("brief", "").strip(),
+        "engine": form.get("engine", "assemblyai"),
         "model_name": form.get("model_name", "base"),
         "language": form.get("language", ""),
         "target_duration": max(5.0, min(300.0, target_duration)),
@@ -139,7 +142,9 @@ def _parse_advanced_form(form) -> dict[str, Any]:
         "style_name": form.get("style_name", "Vibrant TikTok"),
         "caption_font_name": form.get("caption_font_name", "Kanit Bold"),
         "animation_name": form.get("animation_name", "Smooth Pop"),
-    }
+        "thai_spacing": form.get("thai_spacing") == "on"
+        }
+
 
 
 def _produce_video(params: dict[str, Any], job_id: str | None = None) -> dict[str, str]:
@@ -184,6 +189,8 @@ def _produce_video(params: dict[str, Any], job_id: str | None = None) -> dict[st
         params["translate"],
         caption_font_name=params["caption_font_name"],
         animation_name=params["animation_name"],
+        thai_spacing=params.get("thai_spacing", False),
+        engine=params.get("engine", "assemblyai"),
         output_suffix="_final",
     )
     if job_id:
@@ -217,6 +224,8 @@ def _produce_advanced_video(params: dict[str, Any], job_id: str | None = None) -
             False,
             caption_font_name=params["caption_font_name"],
             animation_name=params["animation_name"],
+            thai_spacing=params.get("thai_spacing", False),
+            engine=params.get("engine", "assemblyai"),
             output_suffix="_subtitled",
         )
     else:
@@ -337,9 +346,9 @@ CAPTION_FONTS = {
 }
 
 CAPTION_ANIMATIONS = {
-    "Smooth Pop": {"mode": "pop", "fade": 0.03, "slide": 6, "start_scale": 0.85, "end_scale": 1.0},
-    "Slide Fade": {"mode": "slide", "fade": 0.05, "slide": 15, "start_scale": 1.0, "end_scale": 1.0},
-    "Fade Only": {"mode": "fade", "fade": 0.04, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
+    "Smooth Pop": {"mode": "pop", "fade": 0.05, "slide": 10, "start_scale": 0.8, "end_scale": 1.05},
+    "Slide Fade": {"mode": "slide", "fade": 0.08, "slide": 20, "start_scale": 1.0, "end_scale": 1.0},
+    "Fade Only": {"mode": "fade", "fade": 0.1, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
     "None": {"mode": "none", "fade": 0.0, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
 }
 
@@ -366,17 +375,17 @@ def _has_thai(text: str) -> bool:
     return any("\u0e00" <= char <= "\u0e7f" for char in str(text or ""))
 
 
-def _caption_join(words: list[str]) -> str:
+def _caption_join(words: list[str], spacing: bool = False) -> str:
     clean = [str(word).strip() for word in words if str(word).strip()]
     if not clean:
         return ""
     if any(_has_thai(word) for word in clean):
-        return "".join(clean)
+        return (" " if spacing else "").join(clean)
     return " ".join(clean)
 
 
-def _caption_text_width(draw: ImageDraw.ImageDraw, words: list[str], font: ImageFont.FreeTypeFont) -> float:
-    return draw.textlength(_caption_join(words), font=font)
+def _caption_text_width(draw: ImageDraw.ImageDraw, words: list[str], font: ImageFont.FreeTypeFont, spacing: bool = False) -> float:
+    return draw.textlength(_caption_join(words, spacing=spacing), font=font)
 
 
 def _caption_tokens_from_text(text: str) -> list[str]:
@@ -431,35 +440,102 @@ def _retime_caption_tokens(tokens: list[str], start: float, end: float) -> list[
     if not tokens:
         return []
     start = float(start)
-    end = max(start + 0.08, float(end))
-    total_units = sum(max(1, len(token)) for token in tokens)
-    cursor = start
+    end = max(start + 0.1, float(end))
+    total_len = sum(len(token) for token in tokens)
+    
+    # REAL-TIME ALIGNMENT:
+    # Instead of purely linear, we give the first character of each word 
+    # a bit more "weight" to ensure the highlight triggers right at the start of the sound.
     retimed = []
+    cursor = start
     duration = end - start
+    
     for index, token in enumerate(tokens):
-        units = max(1, len(token))
-        token_end = end if index == len(tokens) - 1 else cursor + duration * (units / total_units)
-        retimed.append({"word": token, "start": cursor, "end": max(cursor + 0.08, token_end)})
+        # Calculate proportional duration based on token length
+        token_dur = (len(token) / total_len) * duration
+        # Minimum duration for visibility: 0.12s
+        token_dur = max(0.12, token_dur)
+        
+        token_end = cursor + token_dur
+        # Ensure we don't exceed the segment end too much
+        if index == len(tokens) - 1:
+            token_end = end
+            
+        retimed.append({
+            "word": token, 
+            "start": cursor, 
+            "end": token_end
+        })
         cursor = token_end
+        
     return retimed
 
 
-def _normalize_caption_words(words: list[dict[str, Any]], fallback_text: str = "") -> list[dict[str, Any]]:
+import librosa
+
+def _align_thai_tokens_with_audio(tokens: list[str], start: float, end: float, video_path: str) -> list[dict[str, Any]]:
+    """Use audio energy to precisely align Thai tokens with speech."""
+    if not tokens: return []
+    try:
+        # Load a small chunk of audio
+        y, sr = librosa.load(video_path, offset=start, duration=end-start, sr=16000)
+        # Compute root-mean-square (RMS) energy for each frame
+        rms = librosa.feature.rms(y=y)[0]
+        # Normalize energy
+        rms = (rms - rms.min()) / (rms.max() - rms.min() + 1e-6)
+        
+        # Find active frames (where someone is actually speaking)
+        threshold = 0.15
+        active_frames = np.where(rms > threshold)[0]
+        
+        if len(active_frames) == 0:
+            return _retime_caption_tokens(tokens, start, end)
+            
+        # Map tokens only to active parts of the audio
+        total_len = sum(len(t) for t in tokens)
+        retimed = []
+        
+        # Distribute frames to tokens based on their character length
+        frames_per_char = len(active_frames) / total_len
+        current_frame_idx = 0
+        
+        for token in tokens:
+            token_frame_count = int(len(token) * frames_per_char)
+            if token_frame_count == 0: token_frame_count = 1
+            
+            # Start of the token in active frames
+            start_f = active_frames[min(current_frame_idx, len(active_frames)-1)]
+            # End of the token in active frames
+            end_f = active_frames[min(current_frame_idx + token_frame_count - 1, len(active_frames)-1)]
+            
+            t_start = start + (start_f * 512 / sr)
+            t_end = start + (end_f * 512 / sr)
+            
+            retimed.append({"word": token, "start": t_start, "end": max(t_start + 0.1, t_end)})
+            current_frame_idx += token_frame_count
+            
+        return retimed
+    except Exception as e:
+        print(f"[!] Audio alignment failed: {e}")
+        return _retime_caption_tokens(tokens, start, end)
+
+def _normalize_caption_words(words: list[dict[str, Any]], video_path: str = "", fallback_text: str = "") -> list[dict[str, Any]]:
     visible = [word for word in words if str(word.get("word", "")).strip()]
     if not visible:
         return []
         
     source_text = fallback_text or _caption_join([word["word"] for word in visible])
     
-    # TRIPLE A STYLE: For Thai, we MUST use our reliable tokenizer to ensure words are valid.
-    # We then distribute the total segment time across these valid words.
     if _has_thai(source_text):
         start = min((float(word.get("start", 0.0)) for word in visible), default=0.0)
         end = max((float(word.get("end", start + 0.1)) for word in visible), default=start + 0.1)
         tokens = _caption_tokens_from_text(source_text)
+        
+        # TRIPLE A REAL-TIME: Try to align tokens with actual audio energy if video_path is provided
+        if video_path and os.path.exists(video_path):
+            return _align_thai_tokens_with_audio(tokens, start, end, video_path)
         return _retime_caption_tokens(tokens, start, end)
 
-    # For English/Non-Thai, we can trust the AI's word-level timestamps.
     return [
         {
             "word": str(word["word"]).strip().upper(),
@@ -514,7 +590,7 @@ def _wrap_words_for_width(words: list[str], draw, font, max_width: int, stroke_w
         lines.append(current)
     return lines
 
-def _layout_caption_words(words: list[str], style, video_w: int, video_h: int):
+def _layout_caption_words(words: list[str], style, video_w: int, video_h: int, spacing: bool = False):
     # TRIPLE A STYLE: Force SINGLE LINE for maximum impact
     max_w = int(video_w * 0.92) # Use more of the width
     min_size = max(60, int(video_w * 0.06)) # Don't let it get too small
@@ -528,10 +604,10 @@ def _layout_caption_words(words: list[str], style, video_w: int, video_h: int):
         
         # Enforce single line: Don't wrap words
         lines = [words] 
-        line_w = _caption_text_width(draw, words, font)
+        line_w = _caption_text_width(draw, words, font, spacing=spacing)
         
         if line_w <= max_w:
-            bbox = _text_bbox(draw, _caption_join(words), font, stroke_width)
+            bbox = _text_bbox(draw, _caption_join(words, spacing=spacing), font, stroke_width)
             line_h = bbox[3] - bbox[1]
             return font, stroke_width, lines, [(line_w, line_h)], 0
             
@@ -540,12 +616,12 @@ def _layout_caption_words(words: list[str], style, video_w: int, video_h: int):
     # Fallback to min_size if still too wide (extremely rare with short chunks)
     font = _load_caption_font(style["font"], min_size)
     stroke_width = max(6, int(min_size * 0.08))
-    line_w = _caption_text_width(draw, words, font)
-    bbox = _text_bbox(draw, _caption_join(words), font, stroke_width)
+    line_w = _caption_text_width(draw, words, font, spacing=spacing)
+    bbox = _text_bbox(draw, _caption_join(words, spacing=spacing), font, stroke_width)
     return font, stroke_width, [words], [(line_w, bbox[3] - bbox[1])], 0
 
-def _render_karaoke_caption_image(words: list[str], active_index: int, style, video_w: int, video_h: int) -> Image.Image:
-    font, stroke_width, lines, line_metrics, gap = _layout_caption_words(words, style, video_w, video_h)
+def _render_karaoke_caption_image(words: list[str], active_index: int, style, video_w: int, video_h: int, spacing: bool = False) -> Image.Image:
+    font, stroke_width, lines, line_metrics, gap = _layout_caption_words(words, style, video_w, video_h, spacing=spacing)
     pad_x = max(34, int(video_w * 0.035))
     pad_y = max(22, int(video_h * 0.014))
     img_w = min(video_w, max(int(max(w for w, _ in line_metrics) + pad_x * 2), int(video_w * 0.45)))
@@ -559,7 +635,7 @@ def _render_karaoke_caption_image(words: list[str], active_index: int, style, vi
     y = pad_y
 
     for line, (line_w, line_h) in zip(lines, line_metrics):
-        full_line_text = _caption_join(line)
+        full_line_text = _caption_join(line, spacing=spacing)
         line_bbox = _text_bbox(draw, full_line_text, font, stroke_width)
         draw_y = y - line_bbox[1]
         x_base = (img_w - line_w) / 2
@@ -573,11 +649,10 @@ def _render_karaoke_caption_image(words: list[str], active_index: int, style, vi
         for line_index, word in enumerate(line):
             if word_cursor == active_index:
                 # Calculate the exact x offset for the active word within the line
-                prefix = _caption_join(line[:line_index])
+                prefix = _caption_join(line[:line_index], spacing=spacing)
                 if prefix:
                     # In Thai, no space. In other languages, a space is added between tokens in _caption_join(line).
-                    # We must match _caption_join's behavior exactly.
-                    if not _has_thai(prefix[-1]) and not _has_thai(word[0]):
+                    if spacing or (not _has_thai(prefix[-1]) and not _has_thai(word[0])):
                         prefix += " "
                     word_x = x_base + draw.textlength(prefix, font=font)
                 else:
@@ -688,7 +763,7 @@ def _caption_clip(
     return clip
 
 
-def create_pro_subtitle_clips(full_text, words, style, video_w, video_h, pos_x, pos_y, animation_name="Smooth Pop"):
+def create_pro_subtitle_clips(full_text, words, style, video_w, video_h, pos_x, pos_y, animation_name="Smooth Pop", spacing: bool = False):
     """Create karaoke captions with REAL-TIME sync to audio timestamps."""
     words = _normalize_caption_words(words, fallback_text=full_text)
     clean_words = [w["word"].strip() for w in words if w.get("word", "").strip()]
@@ -705,7 +780,7 @@ def create_pro_subtitle_clips(full_text, words, style, video_w, video_h, pos_x, 
         if not word_info.get("word", "").strip():
             continue
             
-        image = _render_karaoke_caption_image(clean_words, active_index, style, video_w, video_h)
+        image = _render_karaoke_caption_image(clean_words, active_index, style, video_w, video_h, spacing=spacing)
         x_pos, y_pos = _safe_caption_position_size(image.size, video_w, video_h, pos_x, pos_y)
         
         start = word_info["start"]
@@ -738,18 +813,23 @@ def render_pro_video(
     translate: bool = False,
     caption_font_name: str = "Kanit Bold",
     animation_name: str = "Smooth Pop",
+    thai_spacing: bool = False,
+    engine: str = "assemblyai",
     output_suffix="_pro_final"
 ) -> dict[str, str]:
     style = dict(SUBTITLE_STYLES.get(style_name, SUBTITLE_STYLES["Vibrant TikTok"]))
     style["font"] = CAPTION_FONTS.get(caption_font_name, style["font"])
-    print(f"[*] Loading AssemblyAI (Professional Sync)...")
     
-    # AssemblyAI handles transcription and word sync much better than Whisper for high-end production
-    print(f"[*] Analyzing audio with AssemblyAI for studio-quality sync...")
-    try:
-        result = ai_models.transcribe_with_assemblyai(video_path, language=language)
-    except Exception as e:
-        print(f"[!] AssemblyAI failed, falling back to local Whisper: {e}")
+    if engine == "assemblyai":
+        print(f"[*] Analyzing audio with AssemblyAI (Cloud API)...")
+        try:
+            result = ai_models.transcribe_with_assemblyai(video_path, language=language)
+        except Exception as e:
+            print(f"[!] AssemblyAI failed, falling back to local Whisper: {e}")
+            engine = "whisper" # Force fallback
+            
+    if engine == "whisper":
+        print(f"[*] Analyzing audio with Local Whisper ({model_name})...")
         model = ai_models.get_whisper_model(model_name)
         transcribe_opts = {"fp16": False, "word_timestamps": True, "verbose": False}
         if language: transcribe_opts["language"] = language
@@ -781,16 +861,19 @@ def render_pro_video(
         # We use _caption_phrase_groups which handles Thai tokenization and retiming automatically.
         is_thai_segment = _has_thai(seg.get("text", ""))
         chunk_size = 3 if is_thai_segment else 5
-        chunks = _caption_phrase_groups(filtered_words, max_tokens=chunk_size)
+        
+        # Pass video_path for REAL-TIME audio energy alignment
+        normalized_words = _normalize_caption_words(filtered_words, video_path=video_path)
+        chunks = _caption_phrase_groups(normalized_words, max_tokens=chunk_size)
 
         # 3. Render Karaoke Chunks
         for group in chunks:
-            group_text = _caption_join([w["word"].strip() for w in group])
+            group_text = _caption_join([w["word"].strip() for w in group], spacing=thai_spacing)
             if not group_text.strip():
                 continue
                 
             # For Thai Triple-A style, we enforce SINGLE LINE ONLY.
-            group_clips = create_pro_subtitle_clips(group_text, group, style, video.w, video.h, pos_x, pos_y, animation_name)
+            group_clips = create_pro_subtitle_clips(group_text, group, style, video.w, video.h, pos_x, pos_y, animation_name, spacing=thai_spacing)
             subtitle_clips.extend(group_clips)
 
     output_filename = os.path.splitext(os.path.basename(video_path))[0] + f"{output_suffix}.mp4"
@@ -1054,7 +1137,14 @@ PAGE = """
         <div class="glass-card">
           <div class="section-title"><i class="fas fa-brain"></i> 3. ปัญญาประดิษฐ์ AI</div>
           <div class="form-group">
-            <label>Whisper Sync Model</label>
+            <label>Transcription Engine (ตัวถอดรหัสเสียง)</label>
+            <select name="engine">
+              <option value="assemblyai" selected>AssemblyAI (Cloud API - แนะนำ)</option>
+              <option value="whisper">Whisper (Local Model - รันในเครื่อง)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Whisper Sync Model (สำหรับโหมด Local)</label>
             <select name="model_name">
               <option value="base">Base (เร็วที่สุด)</option>
               <option value="small">Small (แม่นยำขึ้น)</option>
@@ -1064,6 +1154,10 @@ PAGE = """
           <div class="checkbox-group">
             <input type="checkbox" name="translate" id="translate">
             <label for="translate">แปลเป็นภาษาอังกฤษอัตโนมัติ (AI Translation)</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" name="thai_spacing" id="thai_spacing">
+            <label for="thai_spacing">เว้นวรรคระหว่างคำไทย (Thai Spacing)</label>
           </div>
         </div>
 
@@ -1624,6 +1718,10 @@ ADVANCED_PAGE = """
           <div class="title"><i class="fas fa-sliders"></i> 3. Output controls</div>
           <div class="row">
             <div>
+              <label>Engine</label>
+              <select name="engine"><option value="assemblyai">AssemblyAI API</option><option value="whisper">Local Whisper</option></select>
+            </div>
+            <div>
               <label>Whisper model</label>
               <select name="model_name"><option value="base">Base</option><option value="small">Small</option><option value="medium">Medium</option></select>
             </div>
@@ -1643,6 +1741,7 @@ ADVANCED_PAGE = """
             </div>
           </div>
           <label class="checkbox"><input type="checkbox" name="add_subtitles" checked> Add automatic subtitles after the advanced cut</label>
+          <label class="checkbox"><input type="checkbox" name="thai_spacing"> Add spaces between Thai words (เว้นวรรคคำไทย)</label>
           <div class="row">
             <div>
               <label>Caption font</label>
