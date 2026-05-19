@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Video Studio Pro Editor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Kanit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/editor/static/css/editor.css">
+</head>
+<body>
+    <div class="app-shell">
+        <header class="topbar">
+            <div class="topbar-left">
+                <div class="brand">
+                    <div class="brand-badge">C</div>
+                    <div class="brand-copy">
+                        <div class="brand-title">CapCut Style Editor</div>
+                        <div class="brand-subtitle">Fast Timeline Editing</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="topbar-center">
+                <div class="project-chip">
+                    <span class="project-chip-label">Project</span>
+                    <strong id="project-name-view">Untitled Project</strong>
+                </div>
+            </div>
+
+            <div class="topbar-right">
+                <button id="save-project-btn" class="btn btn-ghost">Save</button>
+                <button id="load-project-btn" class="btn btn-ghost">Load</button>
+                <button id="new-project-btn" class="btn btn-ghost">New</button>
+                <button id="export-btn" class="btn btn-accent">Export</button>
+            </div>
+        </header>
+
+        <main class="workspace">
+            <aside class="sidebar-shell">
+                <nav class="sidebar-rail">
+                    <button class="rail-tab active" data-tab="media">Media</button>
+                    <button class="rail-tab" data-tab="text">Text</button>
+                    <button class="rail-tab" data-tab="subtitle">Subtitle</button>
+                    <button class="rail-tab" data-tab="project">Project</button>
+                </nav>
+
+                <section class="sidebar-pane">
+                    <div class="sidebar-view active" data-view="media">
+                        <div class="pane-header">
+                            <div>
+                                <h3>Media</h3>
+                                <p>ลากไฟล์ลง timeline ได้เลย</p>
+                            </div>
+                            <label class="btn btn-primary file-btn pane-upload-btn">
+                                Import
+                                <input id="media-upload-input" type="file" accept="video/*,audio/*,image/*" multiple hidden>
+                            </label>
+                        </div>
+                        <div class="pane-toolbar">
+                            <span id="asset-count" class="pane-count">0 files</span>
+                        </div>
+                        <div id="asset-list" class="asset-grid"></div>
+                    </div>
+
+                    <div class="sidebar-view" data-view="text">
+                        <div class="pane-header">
+                            <div>
+                                <h3>Text</h3>
+                                <p>ลากข้อความลง timeline หรือกดเพิ่มทันที</p>
+                            </div>
+                            <button id="add-text-btn" class="btn btn-primary">Add Text</button>
+                        </div>
+
+                        <div class="preset-stack">
+                            <div class="preset-card" data-text-preset="title" draggable="true">
+                                <div class="preset-title">Title</div>
+                                <div class="preset-preview">ข้อความหัวเรื่อง</div>
+                            </div>
+                            <div class="preset-card" data-text-preset="subtitle" draggable="true">
+                                <div class="preset-title">Subtitle</div>
+                                <div class="preset-preview">คำบรรยายแบบอ่านง่าย</div>
+                            </div>
+                            <div class="preset-card" data-text-preset="highlight" draggable="true">
+                                <div class="preset-title">Highlight</div>
+                                <div class="preset-preview">ข้อความเด่นสไตล์สั้นกระชับ</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-view" data-view="subtitle">
+                        <div class="pane-header">
+                            <div>
+                                <h3>Subtitle</h3>
+                                <p>เลือกคลิปวิดีโอแล้วกดสร้างซับ</p>
+                            </div>
+                            <button id="auto-subtitle-btn" class="btn btn-primary">Auto Subtitle</button>
+                        </div>
+
+                        <div class="helper-card">
+                            <strong>วิธีใช้</strong>
+                            <span>1. เลือกคลิปวิดีโอใน timeline</span>
+                            <span>2. กด Auto Subtitle</span>
+                            <span>3. ซับจะลง track แยกให้อัตโนมัติ</span>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-view" data-view="project">
+                        <div class="pane-header">
+                            <div>
+                                <h3>Project</h3>
+                                <p>ข้อมูลและ track หลัก</p>
+                            </div>
+                        </div>
+
+                        <div class="stats-card">
+                            <div class="stat-row"><span>Duration</span><strong id="project-duration-view">0.0s</strong></div>
+                            <div class="stat-row"><span>Zoom</span><strong id="timeline-zoom-view">100 px/s</strong></div>
+                        </div>
+
+                        <div class="track-tools">
+                            <button class="tool-card" data-add-track="video">+ Video Track</button>
+                            <button class="tool-card" data-add-track="audio">+ Audio Track</button>
+                            <button class="tool-card" data-add-track="subtitle">+ Subtitle Track</button>
+                            <button class="tool-card" data-add-track="effect">+ Text/FX Track</button>
+                        </div>
+                    </div>
+                </section>
+            </aside>
+
+            <section class="editor-main">
+                <div class="preview-panel">
+                    <div class="preview-topbar">
+                        <div class="quick-actions">
+                            <button id="split-btn" class="btn btn-ghost">Split</button>
+                            <button id="duplicate-btn" class="btn btn-ghost">Duplicate</button>
+                            <button id="group-btn" class="btn btn-ghost">Group</button>
+                            <button id="delete-btn" class="btn btn-ghost danger">Delete</button>
+                        </div>
+                        <div id="editor-status" class="editor-status">พร้อมใช้งาน</div>
+                    </div>
+
+                    <div class="preview-stage">
+                        <div class="preview-canvas-shell">
+                            <div class="preview-canvas">
+                                <video id="preview-video" class="preview-video" playsinline></video>
+                                <img id="preview-image" class="preview-image hidden" alt="Preview image">
+                                <div id="preview-overlay" class="preview-overlay"></div>
+                                <div id="preview-empty" class="preview-empty">
+                                    <div class="empty-title">Import media แล้วลากลง timeline</div>
+                                    <div class="empty-subtitle">กด Spacebar เพื่อเล่นหรือหยุดได้ทันที</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="transport">
+                        <div class="transport-left">
+                            <button id="play-pause-btn" class="transport-btn">▶</button>
+                            <button id="rewind-btn" class="transport-btn">-1s</button>
+                            <button id="forward-btn" class="transport-btn">+1s</button>
+                        </div>
+                        <div class="transport-center">
+                            <input id="playhead-slider" type="range" min="0" max="1000" step="1" value="0">
+                        </div>
+                        <div class="transport-right">
+                            <span id="timecode-view" class="timecode">00:00.00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="timeline-panel">
+                    <div class="timeline-topbar">
+                        <div class="timeline-label">Timeline</div>
+                        <div class="timeline-controls">
+                            <button id="zoom-out-btn" class="btn btn-ghost">-</button>
+                            <button id="zoom-in-btn" class="btn btn-ghost">+</button>
+                        </div>
+                    </div>
+
+                    <div class="timeline-shell">
+                        <div id="track-header-list" class="track-header-list"></div>
+                        <div id="timeline-scroll" class="timeline-scroll">
+                            <div id="timeline-ruler" class="timeline-ruler"></div>
+                            <div id="timeline-tracks" class="timeline-tracks"></div>
+                            <div id="playhead-line" class="playhead-line"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="inspector">
+                <div class="inspector-card">
+                    <div class="pane-header inspector-header">
+                        <div>
+                            <h3>Properties</h3>
+                            <p id="selection-kind">No Selection</p>
+                        </div>
+                    </div>
+
+                    <div id="inspector-empty" class="inspector-empty">
+                        เลือกคลิปเพื่อแก้ชื่อ, เวลา และสไตล์พื้นฐาน
+                    </div>
+
+                    <div id="inspector-form" class="inspector-form hidden">
+                        <label class="field">
+                            <span>Name</span>
+                            <input id="clip-name-input" type="text">
+                        </label>
+
+                        <label class="field text-only-field">
+                            <span>Text</span>
+                            <textarea id="clip-text-input" rows="4"></textarea>
+                        </label>
+
+                        <div class="field-grid">
+                            <label class="field">
+                                <span>Start</span>
+                                <input id="clip-start-input" type="number" min="0" step="0.1">
+                            </label>
+                            <label class="field">
+                                <span>Duration</span>
+                                <input id="clip-duration-input" type="number" min="0.1" step="0.1">
+                            </label>
+                        </div>
+
+                        <div class="field-grid text-only-field">
+                            <label class="field">
+                                <span>X %</span>
+                                <input id="clip-x-input" type="number" min="0" max="100" step="1">
+                            </label>
+                            <label class="field">
+                                <span>Y %</span>
+                                <input id="clip-y-input" type="number" min="0" max="100" step="1">
+                            </label>
+                        </div>
+
+                        <div class="field-grid text-only-field">
+                            <label class="field">
+                                <span>Size</span>
+                                <input id="clip-font-size-input" type="number" min="18" max="200" step="1">
+                            </label>
+                            <label class="field">
+                                <span>Opacity</span>
+                                <input id="clip-opacity-input" type="number" min="0.1" max="1" step="0.1">
+                            </label>
+                        </div>
+
+                        <div class="field-grid text-only-field">
+                            <label class="field">
+                                <span>Color</span>
+                                <input id="clip-color-input" type="color">
+                            </label>
+                            <label class="field">
+                                <span>Stroke</span>
+                                <input id="clip-stroke-color-input" type="color">
+                            </label>
+                        </div>
+
+                        <label class="field text-only-field">
+                            <span>Animation</span>
+                            <select id="clip-animation-input">
+                                <option value="none">None</option>
+                                <option value="fade">Fade</option>
+                                <option value="pop">Pop</option>
+                                <option value="bounce">Bounce</option>
+                                <option value="shake">Shake</option>
+                                <option value="zoom">Zoom</option>
+                                <option value="karaoke">Karaoke</option>
+                            </select>
+                        </label>
+
+                        <div class="inspector-actions">
+                            <button id="apply-inspector-btn" class="btn btn-primary inspector-apply-btn">Apply</button>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <script type="module" src="/editor/static/js/app.js"></script>
+</body>
+</html>

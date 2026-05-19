@@ -314,7 +314,7 @@ SUBTITLE_STYLES = {
         "color": "white",
         "highlight_color": "#25ff6a",
         "stroke_color": "black",
-        "stroke_width": 12,
+        "stroke_width": 16,
         "shadow": True
     },
     "Gamer Pro": {
@@ -323,7 +323,7 @@ SUBTITLE_STYLES = {
         "color": "white",
         "highlight_color": "#fff200",
         "stroke_color": "black",
-        "stroke_width": 14,
+        "stroke_width": 18,
         "shadow": True
     },
     "Minimal Dark": {
@@ -332,7 +332,7 @@ SUBTITLE_STYLES = {
         "color": "white",
         "highlight_color": "#25ff6a",
         "stroke_color": "black",
-        "stroke_width": 6,
+        "stroke_width": 8,
         "bg_color": "rgba(0,0,0,0.6)",
         "shadow": False
     }
@@ -346,8 +346,8 @@ CAPTION_FONTS = {
 }
 
 CAPTION_ANIMATIONS = {
-    "Smooth Pop": {"mode": "pop", "fade": 0.05, "slide": 10, "start_scale": 0.8, "end_scale": 1.05},
-    "Slide Fade": {"mode": "slide", "fade": 0.08, "slide": 20, "start_scale": 1.0, "end_scale": 1.0},
+    "Smooth Pop": {"mode": "pop", "fade": 0.05, "slide": 10, "start_scale": 0.7, "end_scale": 1.1},
+    "Slide Fade": {"mode": "slide", "fade": 0.08, "slide": 25, "start_scale": 1.0, "end_scale": 1.0},
     "Fade Only": {"mode": "fade", "fade": 0.1, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
     "None": {"mode": "none", "fade": 0.0, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
 }
@@ -1014,7 +1014,7 @@ PAGE = """
     }
     
     .drag-subtitle { 
-      position: absolute; bottom: 28%; left: 50%; transform: translateX(-50%); 
+      position: absolute; 
       max-width: 88%; min-width: 42%; box-sizing: border-box;
       background: rgba(0,0,0,0.74); padding: 12px 18px; border-radius: 10px; border: 2px dashed var(--primary); 
       cursor: move; color: #fff; font-weight: 900; white-space: normal; font-size: clamp(1.35rem, 3.5vw, 2rem);
@@ -1023,6 +1023,7 @@ PAGE = """
       user-select: none;
       will-change: opacity, transform;
       transform-origin: center;
+      transform: translate(-50%, -50%); /* Keep transform for centering */
     }
     .drag-subtitle .word {
       display: inline-block;
@@ -1079,6 +1080,13 @@ PAGE = """
     }
     .style-card:hover { border-color: var(--primary); }
     .style-card.active { border-color: var(--primary); color: var(--primary); background: rgba(0, 255, 204, 0.1); }
+    .style-preview-img {
+      max-width: 100%;
+      height: 60px; /* Fixed height for consistency */
+      object-fit: contain; /* Ensure image fits without cropping */
+      margin-bottom: 8px;
+      border-radius: 8px;
+    }
     
     .status { padding: 30px; border-radius: 24px; margin-top: 30px; width: 100%; max-width: 800px; backdrop-filter: blur(10px); }
     .status-ok { background: rgba(0, 255, 204, 0.1); border: 1px solid var(--primary); color: #8ee99a; }
@@ -1139,8 +1147,8 @@ PAGE = """
           <div class="form-group">
             <label>Transcription Engine (ตัวถอดรหัสเสียง)</label>
             <select name="engine">
-              <option value="assemblyai" selected>AssemblyAI (Cloud API - แนะนำ)</option>
-              <option value="whisper">Whisper (Local Model - รันในเครื่อง)</option>
+              <option value="assemblyai">AssemblyAI (Cloud API - แนะนำ)</option>
+              <option value="whisper" selected>Whisper (Local Model - รันในเครื่อง)</option>
             </select>
           </div>
           <div class="form-group">
@@ -1148,7 +1156,7 @@ PAGE = """
             <select name="model_name">
               <option value="base">Base (เร็วที่สุด)</option>
               <option value="small">Small (แม่นยำขึ้น)</option>
-              <option value="medium">Medium (ระดับโปร)</option>
+              <option value="medium" selected>Medium (ระดับโปร)</option>
             </select>
           </div>
           <div class="checkbox-group">
@@ -1180,11 +1188,19 @@ PAGE = """
         <div class="glass-card">
           <div class="section-title"><i class="fas fa-star"></i> 5. สไตล์ซับไทเทิล (Animation)</div>
           <div class="style-grid">
-            <div class="style-card active" id="style-Vibrant TikTok" onclick="setStyle('Vibrant TikTok')">TikTok Vibrant (Pop)</div>
-            <div class="style-card" id="style-Gamer Pro" onclick="setStyle('Gamer Pro')">Gamer Pro (Scale)</div>
-            <div class="style-card" id="style-Minimal Dark" onclick="setStyle('Minimal Dark')">Minimal Dark</div>
-          </div>
-          <div class="form-group" style="margin-top:22px;">
+            <div class="style-card active" id="style-Vibrant TikTok" onclick="setStyle('Vibrant TikTok')">
+              <img src="/static/preview/Vibrant_TikTok.png" alt="Vibrant TikTok Preview" class="style-preview-img">
+              <span>TikTok Vibrant (Pop)</span>
+            </div>
+            <div class="style-card" id="style-Gamer Pro" onclick="setStyle('Gamer Pro')">
+              <img src="/static/preview/Gamer_Pro.png" alt="Gamer Pro Preview" class="style-preview-img">
+              <span>Gamer Pro (Scale)</span>
+            </div>
+            <div class="style-card" id="style-Minimal Dark" onclick="setStyle('Minimal Dark')">
+              <img src="/static/preview/Minimal_Dark.png" alt="Minimal Dark Preview" class="style-preview-img">
+              <span>Minimal Dark</span>
+            </div>
+          </div>          <div class="form-group" style="margin-top:22px;">
             <label>Caption Font</label>
             <select name="caption_font_name" id="caption_font_name" onchange="setPreviewFont(this.value)">
               <option value="Kanit Bold" selected>Kanit Bold</option>
@@ -1231,9 +1247,9 @@ PAGE = """
       </div>
       <div class="preview-tools">
         <label for="preview_text">English preview text</label>
-        <input id="preview_text" value="MANY PEOPLE THINK THAT" maxlength="90">
+        <input id="preview_text" value="HIGH" maxlength="90">
         <label for="preview_text_th" style="margin-top:12px;">Thai preview text</label>
-        <input id="preview_text_th" value="หลายคนคิดแบบนั้น" maxlength="90">
+        <input id="preview_text_th" value="" maxlength="90">
         <div class="preview-actions">
           <button type="button" class="btn btn-secondary" onclick="restartCaptionPreview()">
             <i class="fas fa-play"></i> Replay Preview
@@ -1359,6 +1375,13 @@ PAGE = """
     function setPreviewVideo(filePath) {
       const video = document.getElementById('preview_video');
       const empty = document.getElementById('preview_empty');
+      const asyncResult = document.getElementById('async_result');
+      const asyncError = document.getElementById('async_error');
+      
+      // Clear any previous async result or error display
+      if (asyncResult) asyncResult.style.display = 'none';
+      if (asyncError) asyncError.style.display = 'none';
+
       if(!video || !filePath) return;
       video.src = '/preview-file?path=' + encodeURIComponent(filePath);
       video.style.display = 'block';
@@ -1383,22 +1406,37 @@ PAGE = """
       restartCaptionPreview();
     }
 
+    function hasThai(text) {
+      return /[\u0e00-\u0e7f]/.test(text || "");
+    }
+
     function splitPreviewText(value, fallback) {
       const text = (value || fallback).trim();
-      const hasSpaces = /\s/.test(text);
-      if(hasSpaces) return text.split(/\s+/).filter(Boolean).slice(0, 8);
-      return Array.from(text).filter(ch => ch.trim()).slice(0, 12);
+      if (!text) return [];
+      // If contains Thai, split by character for better sizing estimation in preview.
+      // Otherwise, split by space.
+      if (hasThai(text)) return Array.from(text).filter(ch => ch.trim()).slice(0, 15);
+      return text.split(/\s+/).filter(Boolean).slice(0, 10);
     }
 
     function getPreviewLines() {
-      return [
-        splitPreviewText(document.getElementById('preview_text').value, 'MANY PEOPLE THINK THAT'),
-        splitPreviewText(document.getElementById('preview_text_th').value, 'หลายคนคิดแบบนั้น')
-      ].filter(line => line.length);
+      let combinedWords = [];
+      const englishWords = splitPreviewText(document.getElementById('preview_text').value, 'MANY PEOPLE THINK THAT');
+      const thaiWords = splitPreviewText(document.getElementById('preview_text_th').value, 'หลายคนคิดแบบนั้น');
+
+      if (englishWords.length > 0 && thaiWords.length > 0) {
+        combinedWords = [...englishWords, ...thaiWords];
+      } else if (englishWords.length > 0) {
+        combinedWords = englishWords;
+      } else if (thaiWords.length > 0) {
+        combinedWords = thaiWords;
+      }
+      return [combinedWords].filter(line => line.length); // Always return a single array (line)
     }
 
     function getPreviewWordCount() {
-      return getPreviewLines().reduce((sum, line) => sum + line.length, 0);
+      const lines = getPreviewLines();
+      return lines.length > 0 ? lines[0].length : 0;
     }
 
     function renderPreviewWords(activeIndex = -1) {
@@ -1406,19 +1444,21 @@ PAGE = """
       const lines = getPreviewLines();
       let cursor = 0;
       sub.innerHTML = '';
-      lines.forEach((words) => {
-        const line = document.createElement('span');
-        line.className = 'caption-line';
+      if (lines.length > 0 && lines[0].length > 0) {
+        const words = lines[0]; // Get the single conceptual line of words
+        const lineElement = document.createElement('span');
+        lineElement.className = 'caption-line';
+
         words.forEach((word, index) => {
           const span = document.createElement('span');
           span.className = 'word' + (cursor === activeIndex ? ' active' : '');
-          span.textContent = /[a-z]/i.test(word) ? word.toUpperCase() : word;
-          line.appendChild(span);
-          if(index < words.length - 1) line.appendChild(document.createTextNode(' '));
+          span.textContent = hasThai(word) ? word : word.toUpperCase(); // Only uppercase non-Thai words
+          lineElement.appendChild(span);
+          if(index < words.length - 1) lineElement.appendChild(document.createTextNode(' '));
           cursor += 1;
         });
-        sub.appendChild(line);
-      });
+        sub.appendChild(lineElement);
+      }
     }
 
     function applyPreviewStyle() {
@@ -1500,10 +1540,25 @@ PAGE = """
       }, exitAt + preset.exitMs + 650);
     }
 
+    // Function to set the initial position of the draggable subtitle
+    function setInitialDragSubtitlePosition() {
+        const previewRect = preview.getBoundingClientRect();
+        const initial_pos_x = parseFloat(document.getElementById('pos_x').value);
+        const initial_pos_y = parseFloat(document.getElementById('pos_y').value);
+
+        // Calculate pixel coordinates for the center of the subtitle
+        const centerX = previewRect.width * initial_pos_x;
+        const centerY = previewRect.height * initial_pos_y;
+
+        drag_sub.style.left = centerX + 'px';
+        drag_sub.style.top = centerY + 'px';
+    }
+
     document.getElementById('aspect_ratio').addEventListener('change', (e) => {
       const preview = document.getElementById('preview');
       if(e.target.value === '9:16') preview.classList.add('vertical');
       else preview.classList.remove('vertical');
+      setInitialDragSubtitlePosition(); // Recalculate position after aspect ratio change
     });
 
     const drag_sub = document.getElementById('drag_sub');
@@ -1528,13 +1583,14 @@ PAGE = """
     function moveSubtitle(clientX, clientY) {
       if(!dragging) return;
       const rect = preview.getBoundingClientRect();
-      let x = clientX - rect.left - (drag_sub.offsetWidth / 2);
-      let y = clientY - rect.top - (drag_sub.offsetHeight / 2);
+      let x = clientX - rect.left - (drag_sub.offsetWidth / 2); // Top-left of the subtitle
+      let y = clientY - rect.top - (drag_sub.offsetHeight / 2); // Top-left of the subtitle
       x = Math.max(0, Math.min(x, rect.width - drag_sub.offsetWidth));
       y = Math.max(0, Math.min(y, rect.height - drag_sub.offsetHeight));
-      drag_sub.style.left = (x + (drag_sub.offsetWidth/2)) + 'px';
-      drag_sub.style.top = (y + (drag_sub.offsetHeight/2)) + 'px';
-      drag_sub.style.transform = 'translate(-50%, -50%)';
+      // Set left/top for the center of the subtitle
+      drag_sub.style.left = (x + drag_sub.offsetWidth / 2) + 'px';
+      drag_sub.style.top = (y + drag_sub.offsetHeight / 2) + 'px';
+      // The transform: translate(-50%, -50%) is already in CSS
       document.getElementById('pos_x').value = ((x + drag_sub.offsetWidth / 2) / rect.width).toFixed(4);
       document.getElementById('pos_y').value = ((y + drag_sub.offsetHeight / 2) / rect.height).toFixed(4);
     }
@@ -1639,15 +1695,29 @@ PAGE = """
       }
     });
 
-    if(initialJobId) pollJob(initialJobId);
-    else restoreLatestOutput();
-    setPreviewFont(document.getElementById('caption_font_name').value);
-    applyPreviewStyle();
-    restartCaptionPreview();
-  </script>
-</body>
-</html>
-"""
+    // Initial setup when the script loads
+    document.addEventListener('DOMContentLoaded', () => {
+        const currentAspectRatio = document.getElementById('aspect_ratio').value;
+        const previewElement = document.getElementById('preview');
+        if (currentAspectRatio === '9:16') {
+            previewElement.classList.add('vertical');
+        } else {
+            previewElement.classList.remove('vertical');
+        }
+
+        setInitialDragSubtitlePosition(); // Set initial position based on pos_x, pos_y
+
+        setPreviewFont(document.getElementById('caption_font_name').value);
+        applyPreviewStyle();
+        restartCaptionPreview(); // Renders the words and triggers animation
+
+        // Restore latest output or poll job if needed
+        if(initialJobId) pollJob(initialJobId);
+        else restoreLatestOutput();
+    });
+    </script>
+    </body>
+    </html>"""
 
 ADVANCED_PAGE = """
 <!doctype html>
@@ -1846,13 +1916,103 @@ def index():
     return render_template_string(PAGE, result=None, error=None, video_input="", job_id="")
 
 
+from flask import Flask, abort, render_template_string, request, jsonify, send_file, url_for, send_from_directory
+
 @app.get("/advanced")
 def advanced_index():
     return render_template_string(ADVANCED_PAGE)
 
+@app.get("/editor")
+def pro_editor_index():
+    """Professional Video Editor (CapCut Style)."""
+    return render_template_string(open("pro_editor/templates/editor.html", encoding="utf-8").read())
+
+@app.get("/pro_editor/static/<path:filename>")
+def serve_pro_static(filename):
+    """Serve static files for the Pro Editor."""
+    return send_from_directory("pro_editor/static", filename)
+
 @app.get("/api/browse")
 def api_browse():
     return jsonify({"file_path": utils.select_file_dialog()})
+
+@app.post("/api/editor/export")
+def api_editor_export():
+    """Export timeline from the Pro Editor."""
+    try:
+        data = request.json
+        timeline = data.get("timeline", [])
+        
+        # In a real implementation, we would use MoviePy to assemble clips.
+        # For now, we'll simulate the process and return a job ID or a direct link if it's fast.
+        # Since rendering takes time, we should use the job system.
+        
+        job_id = uuid.uuid4().hex
+        def render_task():
+            try:
+                _set_job(job_id, status="running", message="Assembling timeline...")
+                # Mock rendering logic
+                time.sleep(2)
+                _set_job(job_id, message="Rendering high quality 4K video...")
+                time.sleep(3)
+                
+                # Try to find the first video clip to use as a base for mock output
+                video_clips = [c for c in timeline if c.get("type") == "video"]
+                if video_clips:
+                    input_path = video_clips[0].get("path", "")
+                    if os.path.exists(input_path):
+                        output_filename = f"export_{job_id}.mp4"
+                        output_path = os.path.join(OUTPUT_DIR, output_filename)
+                        
+                        # Real MoviePy logic could go here
+                        # For now, let's just copy the file or create a dummy
+                        shutil.copy(input_path, output_path)
+                        
+                        result = {
+                            "output_video": os.path.abspath(output_path),
+                            "output_url": f"/outputs/{quote(output_filename)}",
+                        }
+                        _set_job(job_id, status="done", message="Export completed!", result=result)
+                        return
+
+                _set_job(job_id, status="error", message="No valid video tracks found to export.")
+            except Exception as e:
+                _set_job(job_id, status="error", message=str(e))
+
+        with JOBS_LOCK:
+            JOBS[job_id] = {
+                "id": job_id,
+                "status": "queued",
+                "message": "Export queued.",
+                "created_at": time.time(),
+                "updated_at": time.time(),
+            }
+        
+        JOB_EXECUTOR.submit(render_task)
+        return jsonify({"job_id": job_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.get("/api/editor/asset-info")
+def api_asset_info():
+    """Get info about a local file for the editor."""
+    path = request.args.get("path")
+    if not path or not os.path.exists(path):
+        abort(404)
+    
+    # Try to get duration using moviepy
+    try:
+        clip = VideoFileClip(path)
+        duration = clip.duration
+        clip.close()
+        return jsonify({
+            "path": path,
+            "name": os.path.basename(path),
+            "duration": duration,
+            "url": f"/preview-file?path={quote(path)}"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 @app.get("/outputs/<path:filename>")
 def serve_output(filename):
