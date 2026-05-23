@@ -82,12 +82,58 @@ function applyVideoSource(app, clip) {
     }
 }
 
-function renderCaption(clip) {
+function colorForWord(word, active) {
+    const lang = word.lang || "other";
+    if (active && lang === "th") {
+        return "#38f8c9";
+    }
+    if (active && lang === "en") {
+        return "#ffd166";
+    }
+    if (lang === "th") {
+        return "#d9fff5";
+    }
+    if (lang === "en") {
+        return "#fff1bd";
+    }
+    return "#ffffff";
+}
+
+function appendWordSpans(node, clip) {
+    const localTime = Math.max(0, Number(clip._previewTime || 0) - Number(clip.start || 0));
+    const words = Array.isArray(clip.words) ? clip.words : [];
+    if (!words.length) {
+        node.textContent = clip.text || clip.name || "";
+        return;
+    }
+
+    words.forEach((word, index) => {
+        const text = word.text || word.word || "";
+        const active = localTime >= Number(word.start || 0) && localTime <= Number(word.end || 0);
+        const span = document.createElement("span");
+        span.className = "caption-word";
+        span.dataset.lang = word.lang || "other";
+        span.style.setProperty("--word-color", colorForWord(word, active));
+        if (active) {
+            span.classList.add("active");
+        }
+        span.textContent = text;
+        node.appendChild(span);
+        const next = words[index + 1];
+        if (next && !(word.lang === "th" && next.lang === "th")) {
+            node.appendChild(document.createTextNode(" "));
+        }
+    });
+}
+
+function renderCaption(clip, time) {
     const style = clip.style || {};
     const node = document.createElement("div");
     node.className = "preview-caption";
     node.dataset.animation = style.animation || "none";
-    node.textContent = clip.text || clip.name || "";
+    clip._previewTime = time;
+    appendWordSpans(node, clip);
+    delete clip._previewTime;
     node.style.top = `${Number(style.y ?? 82)}%`;
     node.style.left = `${Number(style.x ?? 50)}%`;
     node.style.color = style.color || "#ffffff";
@@ -109,7 +155,7 @@ export function updatePreview(app) {
         .filter((track) => (track.kind === "subtitle" || track.kind === "effect") && !track.hidden)
         .forEach((track) => {
             activeClips(track, time).forEach((clip) => {
-                overlay.appendChild(renderCaption(clip));
+                overlay.appendChild(renderCaption(clip, time));
             });
         });
 }

@@ -1,4 +1,5 @@
 import {
+    connectRealtime,
     exportProject,
     listProjects,
     loadProject,
@@ -104,6 +105,7 @@ const state = {
     isPlaying: false,
     lastFrameTime: 0,
     activeTab: "media",
+    clientId: uid("client"),
 };
 
 const TEXT_PRESETS = {
@@ -289,6 +291,20 @@ const app = {
         state.selection = [clip.id];
         app.status(`เพิ่ม ${asset.name} ลง timeline แล้ว`);
         app.render();
+    },
+    insertAssetAutomatically(asset) {
+        const track = app.preferredTrackForAsset(asset.kind);
+        if (!track || track.locked) {
+            return null;
+        }
+        const trackEnd = track.clips.reduce(
+            (end, clip) => Math.max(end, Number(clip.start || 0) + Number(clip.duration || 0)),
+            0,
+        );
+        const clip = app.createAssetClip(asset, Math.max(state.playhead, trackEnd));
+        track.clips.push(clip);
+        state.selection = [clip.id];
+        return clip;
     },
     addTextClip(presetName = "title", trackId = null, start = state.playhead) {
         const preset = TEXT_PRESETS[presetName] || TEXT_PRESETS.title;
@@ -492,13 +508,17 @@ const app = {
         refs.timecodeView.textContent = app.formatTime(state.playhead);
         refs.playheadSlider.max = String(Math.max(100, Math.ceil(app.projectDuration() * 100)));
         refs.playheadSlider.value = String(Math.round(state.playhead * 100));
-        renderAssets();
+        if (updateTimeline) {
+            renderAssets();
+        }
         if (updateTimeline) {
             renderTimeline(app);
         } else {
             refs.playheadLine.style.left = `${state.playhead * state.zoom}px`;
         }
-        renderInspector();
+        if (updateTimeline) {
+            renderInspector();
+        }
         updatePreview(app);
     },
 };
@@ -595,10 +615,31 @@ async function handleUpload(files) {
     app.status(`กำลังอัปโหลด ${files.length} ไฟล์...`);
     for (const file of files) {
         const asset = await uploadMedia(file);
-        state.project.assets.push(asset);
+        if (!state.project.assets.some((item) => item.id === asset.id)) {
+            state.project.assets.push(asset);
+        }
+        app.insertAssetAutomatically(asset);
     }
     app.status("อัปโหลดเสร็จแล้ว");
     app.render();
+}
+
+function bindRealtime() {
+    connectRealtime((eventName, payload) => {
+        if (eventName === "asset_uploaded" && payload.asset) {
+            const exists = state.project.assets.some((asset) => asset.id === payload.asset.id);
+            if (!exists) {
+                state.project.assets.push(payload.asset);
+                app.status(`Imported ${payload.asset.name}`);
+                app.render();
+            }
+        }
+        if (eventName === "project_saved" && payload.project?.id === state.project.id) {
+            state.project = payload.project;
+            app.status("Project synced");
+            app.render();
+        }
+    });
 }
 
 function bindEvents() {
@@ -713,6 +754,7 @@ function bindEvents() {
 }
 
 bindEvents();
+bindRealtime();
 app.setActiveTab("media");
 updatePlayButton();
 app.render();

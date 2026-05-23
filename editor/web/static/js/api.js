@@ -56,3 +56,19 @@ export async function exportProject(project) {
     });
     return parseResponse(response);
 }
+
+export function connectRealtime(onEvent) {
+    if (!("EventSource" in window)) {
+        return null;
+    }
+    const source = new EventSource("/api/realtime/stream");
+    ["asset_uploaded", "project_saved", "subtitle_created", "ping", "ready"].forEach((eventName) => {
+        source.addEventListener(eventName, (event) => {
+            if (eventName === "ping" || eventName === "ready") {
+                return;
+            }
+            onEvent(eventName, JSON.parse(event.data || "{}"));
+        });
+    });
+    return source;
+}

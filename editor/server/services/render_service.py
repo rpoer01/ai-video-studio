@@ -23,6 +23,13 @@ AUDIO_EXTENSIONS = {".mp3", ".wav", ".aac", ".m4a", ".ogg", ".flac"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 
 
+LANG_COLORS = {
+    "th": "#38f8c9",
+    "en": "#ffd166",
+    "other": "#ffffff",
+}
+
+
 def _subclip(media, start: float, end: float):
     if hasattr(media, "subclipped"):
         return media.subclipped(start, end)
@@ -96,6 +103,14 @@ def _text_image(text: str, style: dict, canvas_w: int, canvas_h: int):
 
     scratch = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
     draw = ImageDraw.Draw(scratch)
+    words = style.get("words") if isinstance(style.get("words"), list) else []
+    if words:
+        text = "".join(
+            str(word.get("text") or word.get("word") or "")
+            + ("" if word.get("lang") == "th" and index + 1 < len(words) and words[index + 1].get("lang") == "th" else " ")
+            for index, word in enumerate(words)
+        ).strip()
+
     bbox = draw.multiline_textbbox(
         (0, 0),
         text,
@@ -130,16 +145,38 @@ def _text_image(text: str, style: dict, canvas_w: int, canvas_h: int):
 
     text_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     text_draw = ImageDraw.Draw(text_layer)
-    text_draw.multiline_text(
-        (x, y),
-        text,
-        font=font,
-        fill=color,
-        spacing=8,
-        align=align,
-        stroke_width=stroke_width,
-        stroke_fill=stroke_color,
-    )
+    if words:
+        cursor = x
+        baseline = y
+        for index, word in enumerate(words):
+            token = str(word.get("text") or word.get("word") or "").strip()
+            if not token:
+                continue
+            fill = LANG_COLORS.get(word.get("lang", "other"), color)
+            text_draw.text(
+                (cursor, baseline),
+                token,
+                font=font,
+                fill=fill,
+                stroke_width=stroke_width,
+                stroke_fill=stroke_color,
+            )
+            token_bbox = text_draw.textbbox((cursor, baseline), token, font=font, stroke_width=stroke_width)
+            cursor = token_bbox[2]
+            next_word = words[index + 1] if index + 1 < len(words) else None
+            if next_word and not (word.get("lang") == "th" and next_word.get("lang") == "th"):
+                cursor += int(font_size * 0.32)
+    else:
+        text_draw.multiline_text(
+            (x, y),
+            text,
+            font=font,
+            fill=color,
+            spacing=8,
+            align=align,
+            stroke_width=stroke_width,
+            stroke_fill=stroke_color,
+        )
     img = Image.alpha_composite(img, text_layer)
     return np.array(img)
 
@@ -243,6 +280,9 @@ def render_project(project: dict, export_dir: str, project_root: str) -> str:
                     text = str(clip.get("text") or clip.get("name") or "").strip()
                     if not text:
                         continue
+                    style = dict(style)
+                    if clip.get("words"):
+                        style["words"] = clip.get("words")
                     img = _text_image(text, style, width, height)
                     text_clip = ImageClip(img)
                     text_clip = _with_duration(text_clip, clip_duration)

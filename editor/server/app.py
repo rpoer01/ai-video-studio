@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import queue
 import sys
 import traceback
 import uuid
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
@@ -19,8 +20,8 @@ try:
 except Exception:
     aai = None
 
-from process_video_cli import get_smart_chunks
 from editor.server.services.render_service import render_project
+from editor.server.services.subtitle_segmenter import join_tokens, segment_words
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -42,6 +43,27 @@ app = Flask(
     static_folder=str(WEB_DIR / "static"),
     static_url_path="/editor/static",
 )
+
+SYNC_CLIENTS: set[queue.Queue] = set()
+SYNC_HISTORY: list[dict] = []
+
+
+@app.after_request
+def add_editor_cache_headers(response):
+    if request.path.startswith(("/editor/static/", "/editor/uploads/", "/editor/exports/")):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
+
+def publish_sync(event: str, payload: dict):
+    message = {"event": event, "payload": payload}
+    SYNC_HISTORY.append(message)
+    del SYNC_HISTORY[:-50]
+    for client in tuple(SYNC_CLIENTS):
+        try:
+            client.put_nowait(message)
+        except Exception:
+            SYNC_CLIENTS.discard(client)
 
 
 def infer_media_kind(filename: str, mime_type: str | None) -> str:
@@ -82,7 +104,7 @@ def build_subtitle_track(media_path: str, language_code: str = "th", max_words: 
         }
         for word in (transcript.words or [])
     ]
-    chunks = get_smart_chunks(words, max_words=max_words, max_gap=0.45)
+    chunks = segment_words(words, max_words=max_words, max_gap=0.45)
 
     clips = []
     for index, chunk in enumerate(chunks):
@@ -90,15 +112,15 @@ def build_subtitle_track(media_path: str, language_code: str = "th", max_words: 
             continue
         start = float(chunk[0]["start"])
         end = float(chunk[-1]["end"])
-        chunk_words = [item["word"].strip() for item in chunk if item["word"].strip()]
-        if not chunk_words:
+        text = join_tokens(chunk)
+        if not text:
             continue
         clips.append(
             {
                 "id": f"sub-{uuid.uuid4().hex[:10]}",
                 "type": "subtitle",
                 "name": f"Subtitle {index + 1}",
-                "text": " ".join(chunk_words),
+                "text": text,
                 "start": start,
                 "duration": max(0.12, end - start),
                 "sourceIn": 0,
@@ -117,6 +139,16 @@ def build_subtitle_track(media_path: str, language_code: str = "th", max_words: 
                 },
                 "words": [
                     {
+                        "text": item["word"],
+                        "start": float(item["start"]) - start,
+                        "end": float(item["end"]) - start,
+                        "lang": item.get("lang", "other"),
+                    }
+                    for item in chunk
+                ],
+                "segments": [
+                    {
+                        "lang": item.get("lang", "other"),
                         "text": item["word"],
                         "start": float(item["start"]) - start,
                         "end": float(item["end"]) - start,
@@ -148,6 +180,26 @@ def health():
     return jsonify({"ok": True, "editor": True})
 
 
+@app.route("/api/realtime/stream")
+def realtime_stream():
+    client: queue.Queue = queue.Queue(maxsize=100)
+    SYNC_CLIENTS.add(client)
+
+    def events():
+        try:
+            yield "event: ready\ndata: {}\n\n"
+            while True:
+                try:
+                    message = client.get(timeout=20)
+                    yield f"event: {message['event']}\ndata: {json.dumps(message['payload'], ensure_ascii=False)}\n\n"
+                except queue.Empty:
+                    yield "event: ping\ndata: {}\n\n"
+        finally:
+            SYNC_CLIENTS.discard(client)
+
+    return Response(events(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @app.route("/api/media/upload", methods=["POST"])
 def upload_media():
     if "file" not in request.files:
@@ -175,6 +227,7 @@ def upload_media():
         "mimeType": mime_type,
         "size": save_path.stat().st_size,
     }
+    publish_sync("asset_uploaded", {"asset": asset})
     return jsonify(asset)
 
 
@@ -189,6 +242,7 @@ def save_project():
     project["id"] = project_id
     path = project_path(project_id)
     path.write_text(json.dumps(project, ensure_ascii=False, indent=2), encoding="utf-8")
+    publish_sync("project_saved", {"projectId": project_id, "project": project})
     return jsonify({"projectId": project_id, "path": str(path)})
 
 
@@ -226,6 +280,7 @@ def auto_subtitle():
             language_code=payload.get("languageCode", "th"),
             max_words=int(payload.get("maxWords", 3)),
         )
+        publish_sync("subtitle_created", {"mediaPath": media_path, "clipCount": len(clips), "clips": clips})
         return jsonify({"clips": clips})
     except Exception as exc:
         return jsonify({"error": str(exc), "trace": traceback.format_exc()}), 500

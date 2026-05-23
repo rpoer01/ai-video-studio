@@ -450,6 +450,28 @@ textarea {
     white-space: pre-wrap;
 }
 
+.caption-word {
+    display: inline-block;
+    color: var(--word-color, #ffffff);
+    background: linear-gradient(180deg, #ffffff 0%, var(--word-color, #ffffff) 38%, #8cf7ff 120%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.caption-word[data-lang="th"] {
+    text-shadow: 0 3px 12px rgba(45, 212, 191, 0.26), 0 3px 12px rgba(0, 0, 0, 0.48);
+}
+
+.caption-word[data-lang="en"] {
+    text-shadow: 0 3px 12px rgba(251, 191, 36, 0.28), 0 3px 12px rgba(0, 0, 0, 0.48);
+}
+
+.caption-word.active {
+    transform: translateY(-2px) scale(1.04);
+    filter: drop-shadow(0 0 10px currentColor);
+}
+
 .preview-caption[data-animation="pop"] {
     animation: pop-in 0.22s ease-out;
 }

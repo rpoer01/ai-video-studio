@@ -53,6 +53,13 @@ configure_ffmpeg()
 
 app = Flask(__name__)
 
+
+@app.after_request
+def add_editor_cache_headers(response):
+    if request.path.startswith(("/editor/static/", "/editor/uploads/", "/editor/exports/")):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
 JOB_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 JOBS: dict[str, dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
@@ -1917,6 +1924,7 @@ def index():
 
 
 from flask import Flask, abort, render_template_string, request, jsonify, send_file, url_for, send_from_directory
+from editor.server import app as editor_backend
 
 @app.get("/advanced")
 def advanced_index():
@@ -1925,7 +1933,28 @@ def advanced_index():
 @app.get("/editor")
 def pro_editor_index():
     """Professional Video Editor (CapCut Style)."""
-    return render_template_string(open("pro_editor/templates/editor.html", encoding="utf-8").read())
+    return send_from_directory(editor_backend.WEB_DIR, "index.html")
+
+@app.get("/editor/static/<path:filename>")
+def serve_editor_static(filename):
+    return send_from_directory(editor_backend.WEB_DIR / "static", filename)
+
+@app.get("/editor/uploads/<path:filename>")
+def serve_editor_uploads(filename):
+    return send_from_directory(editor_backend.UPLOAD_DIR, filename)
+
+@app.get("/editor/exports/<path:filename>")
+def serve_editor_exports(filename):
+    return send_from_directory(editor_backend.EXPORT_DIR, filename)
+
+app.add_url_rule("/api/health", "editor_health", editor_backend.health, methods=["GET"])
+app.add_url_rule("/api/realtime/stream", "editor_realtime_stream", editor_backend.realtime_stream, methods=["GET"])
+app.add_url_rule("/api/media/upload", "editor_upload_media", editor_backend.upload_media, methods=["POST"])
+app.add_url_rule("/api/project/save", "editor_save_project", editor_backend.save_project, methods=["POST"])
+app.add_url_rule("/api/project/<project_id>", "editor_load_project", editor_backend.load_project, methods=["GET"])
+app.add_url_rule("/api/project/list", "editor_list_projects", editor_backend.list_projects, methods=["GET"])
+app.add_url_rule("/api/auto-subtitle", "editor_auto_subtitle", editor_backend.auto_subtitle, methods=["POST"])
+app.add_url_rule("/api/export", "editor_export_project", editor_backend.export_project, methods=["POST"])
 
 @app.get("/pro_editor/static/<path:filename>")
 def serve_pro_static(filename):
