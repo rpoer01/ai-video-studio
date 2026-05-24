@@ -128,10 +128,11 @@ def build_subtitle_track(media_path: str, language_code: str = "th", max_words: 
                 "style": {
                     "x": 50,
                     "y": 82,
-                    "fontSize": 54,
+                    "fontSize": 28,
+                    "fontSizeMode": "preview",
                     "color": "#ffffff",
                     "strokeColor": "#000000",
-                    "strokeWidth": 4,
+                    "strokeWidth": 1.5,
                     "shadow": True,
                     "opacity": 1,
                     "animation": "karaoke",

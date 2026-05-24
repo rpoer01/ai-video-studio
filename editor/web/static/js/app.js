@@ -9,6 +9,7 @@ import {
 } from "./api.js";
 import { updatePreview } from "./preview.js";
 import { renderTimeline } from "./timeline.js";
+import { previewFontSizeForStyle } from "./styleScale.js";
 
 function uid(prefix = "id") {
     return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -80,6 +81,7 @@ const refs = {
     clipOpacityInput: document.getElementById("clip-opacity-input"),
     clipColorInput: document.getElementById("clip-color-input"),
     clipStrokeColorInput: document.getElementById("clip-stroke-color-input"),
+    clipHighlightColorInput: document.getElementById("clip-highlight-color-input"),
     clipAnimationInput: document.getElementById("clip-animation-input"),
     applyInspectorBtn: document.getElementById("apply-inspector-btn"),
     newProjectBtn: document.getElementById("new-project-btn"),
@@ -113,19 +115,19 @@ const TEXT_PRESETS = {
         name: "Title",
         text: "ข้อความหัวเรื่อง",
         duration: 3.8,
-        style: { x: 50, y: 18, fontSize: 72, color: "#ffffff", strokeColor: "#000000", strokeWidth: 4, shadow: true, opacity: 1, animation: "pop" },
+        style: { x: 50, y: 18, fontSize: 30, fontSizeMode: "preview", color: "#ffffff", strokeColor: "#000000", strokeWidth: 1.6, highlightColor: "#2dd4bf", shadow: true, opacity: 1, animation: "pop" },
     },
     subtitle: {
         name: "Subtitle",
         text: "คำบรรยายแบบอ่านง่าย",
         duration: 3.2,
-        style: { x: 50, y: 78, fontSize: 52, color: "#ffffff", strokeColor: "#000000", strokeWidth: 4, shadow: true, opacity: 1, animation: "fade" },
+        style: { x: 50, y: 78, fontSize: 28, fontSizeMode: "preview", color: "#ffffff", strokeColor: "#000000", strokeWidth: 1.5, highlightColor: "#2dd4bf", shadow: true, opacity: 1, animation: "fade" },
     },
     highlight: {
         name: "Highlight",
         text: "ข้อความเด่น",
         duration: 2.8,
-        style: { x: 50, y: 32, fontSize: 64, color: "#fde047", strokeColor: "#000000", strokeWidth: 4, shadow: true, opacity: 1, animation: "bounce" },
+        style: { x: 50, y: 32, fontSize: 29, fontSizeMode: "preview", color: "#fde047", strokeColor: "#000000", strokeWidth: 1.6, highlightColor: "#fb7185", shadow: true, opacity: 1, animation: "bounce" },
     },
 };
 
@@ -430,10 +432,12 @@ const app = {
                 ...(clip.style || {}),
                 x: Number(refs.clipXInput.value || 50),
                 y: Number(refs.clipYInput.value || 50),
-                fontSize: Number(refs.clipFontSizeInput.value || 54),
+                fontSize: Number(refs.clipFontSizeInput.value || 24),
+                fontSizeMode: "preview",
                 opacity: Number(refs.clipOpacityInput.value || 1),
                 color: refs.clipColorInput.value || "#ffffff",
                 strokeColor: refs.clipStrokeColorInput.value || "#000000",
+                highlightColor: refs.clipHighlightColorInput.value || "#2dd4bf",
                 animation: refs.clipAnimationInput.value || "none",
             };
         }
@@ -568,10 +572,11 @@ function renderInspector() {
     refs.clipDurationInput.value = Number(clip.duration || 1).toFixed(2);
     refs.clipXInput.value = Number(style.x ?? 50);
     refs.clipYInput.value = Number(style.y ?? 50);
-    refs.clipFontSizeInput.value = Number(style.fontSize ?? 54);
+    refs.clipFontSizeInput.value = Math.round(previewFontSizeForStyle(style, state.project));
     refs.clipOpacityInput.value = Number(style.opacity ?? 1);
     refs.clipColorInput.value = style.color || "#ffffff";
     refs.clipStrokeColorInput.value = style.strokeColor || "#000000";
+    refs.clipHighlightColorInput.value = style.highlightColor || "#2dd4bf";
     refs.clipAnimationInput.value = style.animation || "none";
 }
 
@@ -672,6 +677,30 @@ function bindEvents() {
     refs.groupBtn.addEventListener("click", () => app.groupSelection());
     refs.deleteBtn.addEventListener("click", () => app.deleteSelection());
     refs.applyInspectorBtn.addEventListener("click", () => app.applyInspector());
+    [
+        refs.clipTextInput,
+        refs.clipXInput,
+        refs.clipYInput,
+        refs.clipFontSizeInput,
+        refs.clipOpacityInput,
+        refs.clipColorInput,
+        refs.clipStrokeColorInput,
+        refs.clipHighlightColorInput,
+        refs.clipAnimationInput,
+    ].forEach((input) => {
+        input.addEventListener("input", () => {
+            const found = app.findClip(state.selection[0]);
+            if (found?.clip?.type === "effect" || found?.clip?.type === "subtitle") {
+                app.applyInspector();
+            }
+        });
+        input.addEventListener("change", () => {
+            const found = app.findClip(state.selection[0]);
+            if (found?.clip?.type === "effect" || found?.clip?.type === "subtitle") {
+                app.applyInspector();
+            }
+        });
+    });
     refs.autoSubtitleBtn.addEventListener("click", async () => {
         try {
             await app.runAutoSubtitle();

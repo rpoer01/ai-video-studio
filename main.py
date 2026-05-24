@@ -103,6 +103,12 @@ def _parse_process_form(form) -> dict[str, Any]:
     except ValueError as exc:
         raise ValueError("Clip duration must be a number.") from exc
     max_duration = max(5.0, min(300.0, max_duration))
+    try:
+        caption_font_size = int(float(form.get("caption_font_size", "80")))
+    except ValueError as exc:
+        raise ValueError("Caption font size must be a number.") from exc
+    caption_font_size = max(24, min(260, caption_font_size))
+    caption_highlight_color = form.get("caption_highlight_color", "#25ff6a").strip() or "#25ff6a"
 
     return {
         "video_input": video_input,
@@ -113,6 +119,8 @@ def _parse_process_form(form) -> dict[str, Any]:
         "language": form.get("language", ""),
         "style_name": form.get("style_name", "Vibrant TikTok"),
         "caption_font_name": form.get("caption_font_name", "Kanit Bold"),
+        "caption_font_size": caption_font_size,
+        "caption_highlight_color": caption_highlight_color,
         "animation_name": form.get("animation_name", "Smooth Pop"),
         "aspect_ratio": form.get("aspect_ratio", "9:16"),
         "translate": form.get("translate") == "on",
@@ -136,6 +144,11 @@ def _parse_advanced_form(form) -> dict[str, Any]:
         target_duration = float(form.get("target_duration", "45"))
     except ValueError as exc:
         raise ValueError("Target duration must be a number.") from exc
+    try:
+        caption_font_size = int(float(form.get("caption_font_size", "80")))
+    except ValueError as exc:
+        raise ValueError("Caption font size must be a number.") from exc
+    caption_highlight_color = form.get("caption_highlight_color", "#25ff6a").strip() or "#25ff6a"
 
     return {
         "video_paths": video_paths,
@@ -148,6 +161,8 @@ def _parse_advanced_form(form) -> dict[str, Any]:
         "add_subtitles": form.get("add_subtitles") == "on",
         "style_name": form.get("style_name", "Vibrant TikTok"),
         "caption_font_name": form.get("caption_font_name", "Kanit Bold"),
+        "caption_font_size": max(24, min(260, caption_font_size)),
+        "caption_highlight_color": caption_highlight_color,
         "animation_name": form.get("animation_name", "Smooth Pop"),
         "thai_spacing": form.get("thai_spacing") == "on"
         }
@@ -195,6 +210,8 @@ def _produce_video(params: dict[str, Any], job_id: str | None = None) -> dict[st
         params["language"],
         params["translate"],
         caption_font_name=params["caption_font_name"],
+        caption_font_size=params["caption_font_size"],
+        caption_highlight_color=params["caption_highlight_color"],
         animation_name=params["animation_name"],
         thai_spacing=params.get("thai_spacing", False),
         engine=params.get("engine", "assemblyai"),
@@ -230,6 +247,8 @@ def _produce_advanced_video(params: dict[str, Any], job_id: str | None = None) -
             params["language"],
             False,
             caption_font_name=params["caption_font_name"],
+            caption_font_size=params.get("caption_font_size", 80),
+            caption_highlight_color=params.get("caption_highlight_color", "#25ff6a"),
             animation_name=params["animation_name"],
             thai_spacing=params.get("thai_spacing", False),
             engine=params.get("engine", "assemblyai"),
@@ -314,32 +333,35 @@ def _latest_output_result() -> dict[str, str] | None:
 
 # --- Ultra Pro Subtitle Engine v2 ---
 
+CAPTION_RENDER_FONT_SIZE = 80
+CAPTION_RENDER_BASE_WIDTH = 1080
+
 SUBTITLE_STYLES = {
     "Vibrant TikTok": {
         "font": font_paths.get("Kanit-Bold", "Arial"),
-        "font_size": 140,
+        "font_size": CAPTION_RENDER_FONT_SIZE,
         "color": "white",
         "highlight_color": "#25ff6a",
         "stroke_color": "black",
-        "stroke_width": 16,
+        "stroke_width": 9,
         "shadow": True
     },
     "Gamer Pro": {
         "font": font_paths.get("Prompt-Bold", "Arial"),
-        "font_size": 145,
+        "font_size": CAPTION_RENDER_FONT_SIZE,
         "color": "white",
         "highlight_color": "#fff200",
         "stroke_color": "black",
-        "stroke_width": 18,
+        "stroke_width": 9,
         "shadow": True
     },
     "Minimal Dark": {
         "font": font_paths.get("Kanit-Bold", "Arial"),
-        "font_size": 112,
+        "font_size": CAPTION_RENDER_FONT_SIZE,
         "color": "white",
         "highlight_color": "#25ff6a",
         "stroke_color": "black",
-        "stroke_width": 8,
+        "stroke_width": 9,
         "bg_color": "rgba(0,0,0,0.6)",
         "shadow": False
     }
@@ -353,9 +375,9 @@ CAPTION_FONTS = {
 }
 
 CAPTION_ANIMATIONS = {
-    "Smooth Pop": {"mode": "pop", "fade": 0.05, "slide": 10, "start_scale": 0.7, "end_scale": 1.1},
-    "Slide Fade": {"mode": "slide", "fade": 0.08, "slide": 25, "start_scale": 1.0, "end_scale": 1.0},
-    "Fade Only": {"mode": "fade", "fade": 0.1, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
+    "Smooth Pop": {"mode": "pop", "fade": 0.12, "slide": 14, "start_scale": 0.86, "end_scale": 0.97},
+    "Slide Fade": {"mode": "slide", "fade": 0.14, "slide": 20, "start_scale": 0.98, "end_scale": 0.99},
+    "Fade Only": {"mode": "fade", "fade": 0.16, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
     "None": {"mode": "none", "fade": 0.0, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
 }
 
@@ -598,34 +620,23 @@ def _wrap_words_for_width(words: list[str], draw, font, max_width: int, stroke_w
     return lines
 
 def _layout_caption_words(words: list[str], style, video_w: int, video_h: int, spacing: bool = False):
-    # TRIPLE A STYLE: Force SINGLE LINE for maximum impact
     max_w = int(video_w * 0.92) # Use more of the width
-    min_size = max(60, int(video_w * 0.06)) # Don't let it get too small
-    font_size = min(style["font_size"], int(video_w * 0.14)) # Start big
+    base_font_size = int(style.get("font_size", CAPTION_RENDER_FONT_SIZE))
+    output_scale = max(0.5, video_w / CAPTION_RENDER_BASE_WIDTH)
+    font_size = max(24, int(round(base_font_size * output_scale)))
     scratch = Image.new("RGBA", (16, 16))
     draw = ImageDraw.Draw(scratch)
-
-    while font_size >= min_size:
-        font = _load_caption_font(style["font"], font_size)
-        stroke_width = max(6, int(font_size * 0.08)) # Thicker strokes for better legibility
-        
-        # Enforce single line: Don't wrap words
-        lines = [words] 
-        line_w = _caption_text_width(draw, words, font, spacing=spacing)
-        
-        if line_w <= max_w:
-            bbox = _text_bbox(draw, _caption_join(words, spacing=spacing), font, stroke_width)
-            line_h = bbox[3] - bbox[1]
-            return font, stroke_width, lines, [(line_w, line_h)], 0
-            
-        font_size -= 6
-
-    # Fallback to min_size if still too wide (extremely rare with short chunks)
-    font = _load_caption_font(style["font"], min_size)
-    stroke_width = max(6, int(min_size * 0.08))
-    line_w = _caption_text_width(draw, words, font, spacing=spacing)
-    bbox = _text_bbox(draw, _caption_join(words, spacing=spacing), font, stroke_width)
-    return font, stroke_width, [words], [(line_w, bbox[3] - bbox[1])], 0
+    font = _load_caption_font(style["font"], font_size)
+    base_stroke_width = int(style.get("stroke_width", max(3, int(base_font_size * 0.11))))
+    stroke_width = max(3, int(round(base_stroke_width * output_scale)))
+    lines = _wrap_words_for_width(words, draw, font, max_w, stroke_width)
+    line_metrics = []
+    for line in lines:
+        line_text = _caption_join(line, spacing=spacing)
+        line_w = _caption_text_width(draw, line, font, spacing=spacing)
+        bbox = _text_bbox(draw, line_text, font, stroke_width)
+        line_metrics.append((line_w, bbox[3] - bbox[1]))
+    return font, stroke_width, lines, line_metrics, max(8, int(font_size * 0.16))
 
 def _render_karaoke_caption_image(words: list[str], active_index: int, style, video_w: int, video_h: int, spacing: bool = False) -> Image.Image:
     font, stroke_width, lines, line_metrics, gap = _layout_caption_words(words, style, video_w, video_h, spacing=spacing)
@@ -819,6 +830,8 @@ def render_pro_video(
     language: str = None,
     translate: bool = False,
     caption_font_name: str = "Kanit Bold",
+    caption_font_size: int | None = None,
+    caption_highlight_color: str | None = None,
     animation_name: str = "Smooth Pop",
     thai_spacing: bool = False,
     engine: str = "assemblyai",
@@ -826,6 +839,13 @@ def render_pro_video(
 ) -> dict[str, str]:
     style = dict(SUBTITLE_STYLES.get(style_name, SUBTITLE_STYLES["Vibrant TikTok"]))
     style["font"] = CAPTION_FONTS.get(caption_font_name, style["font"])
+    if caption_font_size is None:
+        style["font_size"] = CAPTION_RENDER_FONT_SIZE
+    else:
+        style["font_size"] = max(24, min(260, int(caption_font_size)))
+    style["stroke_width"] = 9
+    if caption_highlight_color:
+        style["highlight_color"] = caption_highlight_color
     
     if engine == "assemblyai":
         print(f"[*] Analyzing audio with AssemblyAI (Cloud API)...")
@@ -1022,11 +1042,12 @@ PAGE = """
     
     .drag-subtitle { 
       position: absolute; 
-      max-width: 88%; min-width: 42%; box-sizing: border-box;
-      background: rgba(0,0,0,0.74); padding: 12px 18px; border-radius: 10px; border: 2px dashed var(--primary); 
-      cursor: move; color: #fff; font-weight: 900; white-space: normal; font-size: clamp(1.35rem, 3.5vw, 2rem);
-      line-height: 1.08; text-align: center; overflow-wrap: anywhere; text-transform: uppercase;
+      max-width: 92%; min-width: 0; box-sizing: border-box;
+      background: transparent; padding: 0; border-radius: 0; border: 0; 
+      cursor: move; color: #fff; font-weight: 900; white-space: normal; font-size: var(--caption-preview-size, 54px);
+      line-height: 1.08; text-align: center; overflow-wrap: anywhere; text-transform: none;
       text-shadow: 0 4px 0 #000, 0 0 18px rgba(37, 255, 106, 0.75);
+      -webkit-text-stroke: var(--caption-preview-stroke, 3px) var(--preview-stroke-color, #000);
       user-select: none;
       will-change: opacity, transform;
       transform-origin: center;
@@ -1035,7 +1056,7 @@ PAGE = """
     .drag-subtitle .word {
       display: inline-block;
       color: var(--preview-word-color, #fff);
-      margin: 0 0.12em;
+      margin: 0;
       transition: color 90ms linear, text-shadow 90ms linear;
     }
     .drag-subtitle .caption-line {
@@ -1050,10 +1071,10 @@ PAGE = """
       text-shadow: 0 4px 0 #000, 0 0 18px var(--preview-highlight-glow, rgba(37, 255, 106, 0.75));
     }
     .drag-subtitle.preview-enter {
-      animation: captionPreviewIn var(--preview-enter-ms, 170ms) cubic-bezier(.2,.9,.22,1) both;
+      animation: captionPreviewIn var(--preview-enter-ms, 240ms) cubic-bezier(.16,1,.3,1) both;
     }
     .drag-subtitle.preview-exit {
-      animation: captionPreviewOut var(--preview-exit-ms, 150ms) cubic-bezier(.55,0,.72,.18) both;
+      animation: captionPreviewOut var(--preview-exit-ms, 180ms) cubic-bezier(.4,0,.2,1) both;
     }
     .drag-subtitle.preview-none {
       animation: none;
@@ -1062,15 +1083,18 @@ PAGE = """
     @keyframes captionPreviewIn {
       from {
         opacity: var(--preview-from-opacity, 0);
-        transform: translate(-50%, var(--preview-enter-y, 18px)) scale(var(--preview-start-scale, 0.94));
+        filter: blur(3px);
+        transform: translate(-50%, calc(-50% + var(--preview-enter-y, 14px))) scale(var(--preview-start-scale, 0.9));
       }
-      to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      72% { opacity: 1; filter: blur(0); transform: translate(-50%, -50%) scale(1.035); }
+      to { opacity: 1; filter: blur(0); transform: translate(-50%, -50%) scale(1); }
     }
     @keyframes captionPreviewOut {
       from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
       to {
         opacity: var(--preview-to-opacity, 0);
-        transform: translate(-50%, var(--preview-exit-y, -7px)) scale(var(--preview-end-scale, 0.985));
+        filter: blur(2px);
+        transform: translate(-50%, calc(-50% + var(--preview-exit-y, -8px))) scale(var(--preview-end-scale, 0.98));
       }
     }
     .preview-tools { width: 100%; max-width: 960px; margin: 18px 0 0; }
@@ -1217,6 +1241,15 @@ PAGE = """
             </select>
           </div>
           <div class="form-group">
+            <label>Caption Font Size</label>
+            <input type="number" id="caption_font_size" value="31" min="10" max="110" step="1" oninput="applyPreviewFontSize()">
+            <input type="hidden" name="caption_font_size" id="caption_render_font_size" value="80">
+          </div>
+          <div class="form-group">
+            <label>Highlight Color</label>
+            <input type="color" name="caption_highlight_color" id="caption_highlight_color" value="#25ff6a" oninput="applyPreviewHighlightColor()">
+          </div>
+          <div class="form-group">
             <label>Caption Animation</label>
             <select name="animation_name" id="animation_name" onchange="restartCaptionPreview()">
               <option value="Smooth Pop" selected>Smooth Pop</option>
@@ -1254,9 +1287,7 @@ PAGE = """
       </div>
       <div class="preview-tools">
         <label for="preview_text">English preview text</label>
-        <input id="preview_text" value="HIGH" maxlength="90">
-        <label for="preview_text_th" style="margin-top:12px;">Thai preview text</label>
-        <input id="preview_text_th" value="" maxlength="90">
+        <input id="preview_text" value="Hello" maxlength="90">
         <div class="preview-actions">
           <button type="button" class="btn btn-secondary" onclick="restartCaptionPreview()">
             <i class="fas fa-play"></i> Replay Preview
@@ -1313,29 +1344,29 @@ PAGE = """
         highlight: '#25ff6a',
         glow: 'rgba(37,255,106,0.75)',
         shadow: '0 4px 0 #000, 0 0 18px rgba(37,255,106,0.75)',
-        bg: 'rgba(0,0,0,0.74)'
+        stroke: '#000'
       },
       'Gamer Pro': {
         color: '#fff',
         highlight: '#fff200',
         glow: 'rgba(255,242,0,0.8)',
         shadow: '4px 4px 0 #000, 0 0 16px rgba(255,242,0,0.45)',
-        bg: 'rgba(0,0,0,0.78)'
+        stroke: '#000'
       },
       'Minimal Dark': {
         color: '#fff',
         highlight: '#25ff6a',
         glow: 'rgba(37,255,106,0.45)',
         shadow: '0 3px 0 #000',
-        bg: 'rgba(0,0,0,0.58)'
+        stroke: '#000'
       }
     };
 
     const previewAnimationPresets = {
-      'Smooth Pop': { enterMs: 170, exitMs: 150, startScale: 0.94, endScale: 0.985, enterY: '18px', exitY: '-7px', fromOpacity: 0, toOpacity: 0 },
-      'Slide Fade': { enterMs: 190, exitMs: 170, startScale: 1, endScale: 1, enterY: '30px', exitY: '-10px', fromOpacity: 0, toOpacity: 0 },
-      'Fade Only': { enterMs: 150, exitMs: 140, startScale: 1, endScale: 1, enterY: '-50%', exitY: '-50%', fromOpacity: 0, toOpacity: 0 },
-      'None': { enterMs: 0, exitMs: 0, startScale: 1, endScale: 1, enterY: '-50%', exitY: '-50%', fromOpacity: 1, toOpacity: 1 }
+      'Smooth Pop': { enterMs: 240, exitMs: 180, startScale: 0.9, endScale: 0.98, enterY: '14px', exitY: '-8px', fromOpacity: 0, toOpacity: 0 },
+      'Slide Fade': { enterMs: 260, exitMs: 190, startScale: 0.98, endScale: 0.99, enterY: '22px', exitY: '-10px', fromOpacity: 0, toOpacity: 0 },
+      'Fade Only': { enterMs: 190, exitMs: 170, startScale: 1, endScale: 1, enterY: '0px', exitY: '0px', fromOpacity: 0, toOpacity: 0 },
+      'None': { enterMs: 0, exitMs: 0, startScale: 1, endScale: 1, enterY: '0px', exitY: '0px', fromOpacity: 1, toOpacity: 1 }
     };
 
     let previewTimer = null;
@@ -1409,8 +1440,44 @@ PAGE = """
       if(name.includes('Prompt')) sub.style.fontFamily = "'Prompt', 'Kanit', sans-serif";
       else if(name.includes('Arial')) sub.style.fontFamily = "Arial, sans-serif";
       else sub.style.fontFamily = "'Kanit', sans-serif";
-      sub.style.fontWeight = name.includes('Regular') ? '700' : '900';
+      sub.style.fontWeight = name.includes('Regular') ? '400' : '700';
+      applyPreviewFontSize();
       restartCaptionPreview();
+    }
+
+    function applyPreviewFontSize() {
+      const sub = document.getElementById('drag_sub');
+      const input = document.getElementById('caption_font_size');
+      const renderInput = document.getElementById('caption_render_font_size');
+      const preview = document.getElementById('preview');
+      if(!sub || !input || !preview) return;
+      const renderBaseWidth = 1080;
+      const previewWidth = Math.max(1, preview.getBoundingClientRect().width);
+      const previewSize = Math.max(10, Math.min(110, Number(input.value || 31)));
+      const renderSize = Math.max(24, Math.min(260, Math.round(previewSize * (renderBaseWidth / previewWidth))));
+      const previewStroke = Math.max(1, 9 * (previewWidth / renderBaseWidth));
+      sub.style.setProperty('--caption-preview-size', previewSize.toFixed(1) + 'px');
+      sub.style.setProperty('--caption-preview-stroke', previewStroke.toFixed(2) + 'px');
+      if(renderInput) renderInput.value = String(renderSize);
+    }
+
+    function applyPreviewHighlightColor() {
+      const input = document.getElementById('caption_highlight_color');
+      const sub = document.getElementById('drag_sub');
+      if(!input || !sub) return;
+      sub.style.setProperty('--preview-highlight-color', input.value || '#25ff6a');
+      sub.style.setProperty('--preview-highlight-glow', hexToGlow(input.value || '#25ff6a'));
+    }
+
+    function hexToGlow(hex) {
+      const clean = String(hex || '#25ff6a').replace('#', '');
+      const full = clean.length === 3 ? clean.split('').map(ch => ch + ch).join('') : clean;
+      const value = Number.parseInt(full, 16);
+      if(!Number.isFinite(value)) return 'rgba(37,255,106,0.75)';
+      const r = (value >> 16) & 255;
+      const g = (value >> 8) & 255;
+      const b = value & 255;
+      return `rgba(${r},${g},${b},0.75)`;
     }
 
     function hasThai(text) {
@@ -1427,18 +1494,8 @@ PAGE = """
     }
 
     function getPreviewLines() {
-      let combinedWords = [];
-      const englishWords = splitPreviewText(document.getElementById('preview_text').value, 'MANY PEOPLE THINK THAT');
-      const thaiWords = splitPreviewText(document.getElementById('preview_text_th').value, 'หลายคนคิดแบบนั้น');
-
-      if (englishWords.length > 0 && thaiWords.length > 0) {
-        combinedWords = [...englishWords, ...thaiWords];
-      } else if (englishWords.length > 0) {
-        combinedWords = englishWords;
-      } else if (thaiWords.length > 0) {
-        combinedWords = thaiWords;
-      }
-      return [combinedWords].filter(line => line.length); // Always return a single array (line)
+      const englishWords = splitPreviewText(document.getElementById('preview_text').value, 'Hello');
+      return [englishWords].filter(line => line.length);
     }
 
     function getPreviewWordCount() {
@@ -1459,7 +1516,7 @@ PAGE = """
         words.forEach((word, index) => {
           const span = document.createElement('span');
           span.className = 'word' + (cursor === activeIndex ? ' active' : '');
-          span.textContent = hasThai(word) ? word : word.toUpperCase(); // Only uppercase non-Thai words
+          span.textContent = word;
           lineElement.appendChild(span);
           if(index < words.length - 1) lineElement.appendChild(document.createTextNode(' '));
           cursor += 1;
@@ -1473,10 +1530,11 @@ PAGE = """
       const preset = previewStylePresets[styleName] || previewStylePresets['Vibrant TikTok'];
       const sub = document.getElementById('drag_sub');
       sub.style.setProperty('--preview-word-color', preset.color);
-      sub.style.setProperty('--preview-highlight-color', preset.highlight);
-      sub.style.setProperty('--preview-highlight-glow', preset.glow);
+      const highlightInput = document.getElementById('caption_highlight_color');
+      if(highlightInput && !highlightInput.dataset.userEdited) highlightInput.value = preset.highlight;
+      applyPreviewHighlightColor();
       sub.style.textShadow = preset.shadow;
-      sub.style.background = preset.bg;
+      sub.style.setProperty('--preview-stroke-color', preset.stroke || '#000');
     }
 
     function applyPreviewAnimationVars() {
@@ -1565,22 +1623,24 @@ PAGE = """
       const preview = document.getElementById('preview');
       if(e.target.value === '9:16') preview.classList.add('vertical');
       else preview.classList.remove('vertical');
+      applyPreviewFontSize();
       setInitialDragSubtitlePosition(); // Recalculate position after aspect ratio change
     });
 
     const drag_sub = document.getElementById('drag_sub');
     const preview = document.getElementById('preview');
     const previewText = document.getElementById('preview_text');
-    const previewTextTh = document.getElementById('preview_text_th');
+    const highlightColorInput = document.getElementById('caption_highlight_color');
     let dragging = false;
     if(previewText) {
       previewText.addEventListener('input', () => {
         restartCaptionPreview();
       });
     }
-    if(previewTextTh) {
-      previewTextTh.addEventListener('input', () => {
-        restartCaptionPreview();
+    if(highlightColorInput) {
+      highlightColorInput.addEventListener('input', () => {
+        highlightColorInput.dataset.userEdited = '1';
+        applyPreviewHighlightColor();
       });
     }
     drag_sub.addEventListener('mousedown', (e) => { dragging = true; e.preventDefault(); });
@@ -1690,6 +1750,7 @@ PAGE = """
       event.preventDefault();
       document.getElementById('async_result').style.display = 'none';
       document.getElementById('async_error').style.display = 'none';
+      applyPreviewFontSize();
       showLoader('Submitting job...');
       try {
         const formData = new FormData(event.currentTarget);
@@ -1823,6 +1884,14 @@ ADVANCED_PAGE = """
             <div>
               <label>Caption font</label>
               <select name="caption_font_name"><option>Kanit Bold</option><option>Prompt Bold</option><option>Kanit Regular</option></select>
+            </div>
+            <div>
+              <label>Caption font size</label>
+              <input type="number" name="caption_font_size" value="80" min="24" max="260" step="1">
+            </div>
+            <div>
+              <label>Highlight color</label>
+              <input type="color" name="caption_highlight_color" value="#25ff6a">
             </div>
             <div>
               <label>Animation</label>
@@ -2109,4 +2178,4 @@ def process():
         return render_template_string(PAGE, result=None, error=str(e), video_input=video_input, job_id="")
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=5001, debug=False)

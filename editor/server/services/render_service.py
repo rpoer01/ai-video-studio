@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+import math
 from pathlib import Path
 
 import numpy as np
@@ -28,6 +29,8 @@ LANG_COLORS = {
     "en": "#ffd166",
     "other": "#ffffff",
 }
+
+PREVIEW_REFERENCE_WIDTH = 320
 
 
 def _subclip(media, start: float, end: float):
@@ -93,11 +96,21 @@ def _fit_media(media, width: int, height: int):
 
 
 def _text_image(text: str, style: dict, canvas_w: int, canvas_h: int):
-    font_size = int(style.get("fontSize", 54))
+    raw_font_size = float(style.get("fontSize", 24))
+    if style.get("fontSizeMode") == "preview":
+        font_size = max(1, int(round(raw_font_size * (canvas_w / PREVIEW_REFERENCE_WIDTH))))
+    else:
+        font_size = max(1, int(round(raw_font_size)))
     font = font_manager.load_font(font_size)
-    stroke_width = int(style.get("strokeWidth", max(1, font_size * 0.06)))
+    raw_stroke_width = float(style.get("strokeWidth", max(1, raw_font_size * 0.06)))
+    if style.get("fontSizeMode") == "preview":
+        stroke_width = max(0, int(round(raw_stroke_width * (canvas_w / PREVIEW_REFERENCE_WIDTH))))
+    else:
+        stroke_width = max(0, int(round(raw_stroke_width)))
     color = style.get("color", "#ffffff")
     stroke_color = style.get("strokeColor", "#000000")
+    highlight_color = style.get("highlightColor", "#2dd4bf")
+    active_word_index = style.get("activeWordIndex")
     shadow = bool(style.get("shadow", True))
     align = style.get("align", "center")
 
@@ -119,8 +132,8 @@ def _text_image(text: str, style: dict, canvas_w: int, canvas_h: int):
         align=align,
         stroke_width=stroke_width,
     )
-    text_w = max(1, bbox[2] - bbox[0])
-    text_h = max(1, bbox[3] - bbox[1])
+    text_w = max(1, int(math.ceil(bbox[2] - bbox[0])))
+    text_h = max(1, int(math.ceil(bbox[3] - bbox[1])))
     pad = max(24, int(font_size * 0.55))
 
     img = Image.new("RGBA", (text_w + pad * 2, text_h + pad * 2), (0, 0, 0, 0))
@@ -152,7 +165,7 @@ def _text_image(text: str, style: dict, canvas_w: int, canvas_h: int):
             token = str(word.get("text") or word.get("word") or "").strip()
             if not token:
                 continue
-            fill = LANG_COLORS.get(word.get("lang", "other"), color)
+            fill = highlight_color if index == active_word_index else color
             text_draw.text(
                 (cursor, baseline),
                 token,
@@ -187,6 +200,23 @@ def _normalized_position(style: dict, canvas_w: int, canvas_h: int):
     x = max(0.0, min(100.0, x))
     y = max(0.0, min(100.0, y))
     return (int(canvas_w * (x / 100.0)), int(canvas_h * (y / 100.0)))
+
+
+def _text_layer_from_image(img, style: dict, width: int, height: int, clip_start: float, clip_duration: float):
+    text_clip = ImageClip(img)
+    text_clip = _with_duration(text_clip, clip_duration)
+    text_clip = _with_start(text_clip, clip_start)
+    center_x, center_y = _normalized_position(style, width, height)
+    text_h, text_w = img.shape[0], img.shape[1]
+    position = (
+        max(0, min(width - text_w, int(center_x - text_w / 2))),
+        max(0, min(height - text_h, int(center_y - text_h / 2))),
+    )
+    text_clip = _with_position(text_clip, position)
+    opacity = float(style.get("opacity", 1.0))
+    if opacity < 1.0:
+        text_clip = _with_opacity(text_clip, opacity)
+    return text_clip
 
 
 def _project_duration(project: dict) -> float:
@@ -281,18 +311,24 @@ def render_project(project: dict, export_dir: str, project_root: str) -> str:
                     if not text:
                         continue
                     style = dict(style)
-                    if clip.get("words"):
+                    words = clip.get("words") if isinstance(clip.get("words"), list) else []
+                    if words:
                         style["words"] = clip.get("words")
-                    img = _text_image(text, style, width, height)
-                    text_clip = ImageClip(img)
-                    text_clip = _with_duration(text_clip, clip_duration)
-                    text_clip = _with_start(text_clip, clip_start)
-                    position = _normalized_position(style, width, height)
-                    text_clip = _with_position(text_clip, position)
-                    opacity = float(style.get("opacity", 1.0))
-                    if opacity < 1.0:
-                        text_clip = _with_opacity(text_clip, opacity)
-                    layers.append(text_clip)
+                    if words and style.get("animation") == "karaoke":
+                        for word_index, word in enumerate(words):
+                            word_start = max(0.0, float(word.get("start", 0.0)))
+                            word_end = max(word_start + 0.05, float(word.get("end", word_start + 0.25)))
+                            local_start = min(clip_duration, word_start)
+                            local_end = min(clip_duration, word_end)
+                            if local_end <= local_start:
+                                continue
+                            frame_style = dict(style)
+                            frame_style["activeWordIndex"] = word_index
+                            img = _text_image(text, frame_style, width, height)
+                            layers.append(_text_layer_from_image(img, frame_style, width, height, clip_start + local_start, local_end - local_start))
+                    else:
+                        img = _text_image(text, style, width, height)
+                        layers.append(_text_layer_from_image(img, style, width, height, clip_start, clip_duration))
 
         final = CompositeVideoClip(layers, size=(width, height))
         if audio_layers:

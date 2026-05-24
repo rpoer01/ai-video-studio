@@ -1,3 +1,5 @@
+import { previewFontSizeForStyle, previewScaleForCanvas, previewStrokeWidthForStyle } from "./styleScale.js";
+
 function findTrack(state, kind) {
     return state.project.tracks.find((track) => track.kind === kind && !track.hidden);
 }
@@ -82,24 +84,15 @@ function applyVideoSource(app, clip) {
     }
 }
 
-function colorForWord(word, active) {
-    const lang = word.lang || "other";
-    if (active && lang === "th") {
-        return "#38f8c9";
+function colorForWord(word, active, style) {
+    if (active) {
+        return style.highlightColor || "#2dd4bf";
     }
-    if (active && lang === "en") {
-        return "#ffd166";
-    }
-    if (lang === "th") {
-        return "#d9fff5";
-    }
-    if (lang === "en") {
-        return "#fff1bd";
-    }
-    return "#ffffff";
+    return style.color || "#ffffff";
 }
 
 function appendWordSpans(node, clip) {
+    const style = clip.style || {};
     const localTime = Math.max(0, Number(clip._previewTime || 0) - Number(clip.start || 0));
     const words = Array.isArray(clip.words) ? clip.words : [];
     if (!words.length) {
@@ -113,7 +106,7 @@ function appendWordSpans(node, clip) {
         const span = document.createElement("span");
         span.className = "caption-word";
         span.dataset.lang = word.lang || "other";
-        span.style.setProperty("--word-color", colorForWord(word, active));
+        span.style.setProperty("--word-color", colorForWord(word, active, style));
         if (active) {
             span.classList.add("active");
         }
@@ -137,8 +130,12 @@ function renderCaption(clip, time) {
     node.style.top = `${Number(style.y ?? 82)}%`;
     node.style.left = `${Number(style.x ?? 50)}%`;
     node.style.color = style.color || "#ffffff";
-    node.style.webkitTextStroke = `${Number(style.strokeWidth ?? 4)}px ${style.strokeColor || "#000000"}`;
-    node.style.fontSize = `${Number(style.fontSize ?? 54)}px`;
+    const canvasWidth = Math.max(1, Number(app.refs.previewOverlay.getBoundingClientRect().width || 1));
+    const previewScale = previewScaleForCanvas(canvasWidth);
+    const fontSize = previewFontSizeForStyle(style, app.state.project);
+    const strokeWidth = previewStrokeWidthForStyle(style, app.state.project);
+    node.style.webkitTextStroke = `${Math.max(0.75, strokeWidth * previewScale)}px ${style.strokeColor || "#000000"}`;
+    node.style.fontSize = `${Math.max(8, fontSize * previewScale)}px`;
     node.style.opacity = String(Number(style.opacity ?? 1));
     node.style.fontFamily = "Kanit, Inter, sans-serif";
     return node;
