@@ -1,7 +1,5 @@
 import os
 import requests
-import tkinter as tk
-from tkinter import filedialog
 
 FONTS = {
     "Kanit-Bold.ttf": [
@@ -53,6 +51,8 @@ def download_required_fonts(target_dir="fonts"):
 
 def select_file_dialog():
     """Opens a native Windows file explorer to select a video file."""
+    import tkinter as tk
+    from tkinter import filedialog
     root = tk.Tk()
     root.withdraw()
     root.attributes("-topmost", True)
@@ -65,6 +65,8 @@ def select_file_dialog():
 
 def select_files_dialog():
     """Opens a native Windows file explorer to select multiple video files."""
+    import tkinter as tk
+    from tkinter import filedialog
     root = tk.Tk()
     root.withdraw()
     root.attributes("-topmost", True)
