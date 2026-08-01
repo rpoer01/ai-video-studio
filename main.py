@@ -1790,7 +1790,7 @@ PAGE = """
       // If contains Thai, split by character for better sizing estimation in preview.
       // Otherwise, split by space.
       if (hasThai(text)) return Array.from(text).filter(ch => ch.trim()).slice(0, 15);
-      return text.split(/\s+/).filter(Boolean).slice(0, 10);
+      return text.split(/\\s+/).filter(Boolean).slice(0, 10);
     }
 
     function getPreviewLines() {
