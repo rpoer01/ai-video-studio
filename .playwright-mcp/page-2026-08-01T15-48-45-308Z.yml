@@ -1,0 +1,133 @@
+- generic [active] [ref=f3e1]:
+  - generic [ref=f3e3]:
+    - generic [ref=f3e4]:
+      - generic [ref=f3e5]: 
+      - text: STUDIO PRO v4.5
+    - generic [ref=f3e6]:
+      - link " Advanced Mode" [ref=f3e7] [cursor=pointer]:
+        - /url: /advanced
+        - generic [ref=f3e8]: 
+        - text: Advanced Mode
+      - generic [ref=f3e9]:
+        - generic [ref=f3e10]: 
+        - text: Ultra Sync Enabled
+      - generic [ref=f3e11]:
+        - generic [ref=f3e12]: 
+        - text: GPU Mastering
+  - generic [ref=f3e13]:
+    - generic [ref=f3e15]:
+      - generic [ref=f3e16]:
+        - generic [ref=f3e17]:
+          - generic [ref=f3e18]: 
+          - text: 1. คิววิดีโอ (Video Queue)
+        - generic [ref=f3e19]:
+          - generic [ref=f3e20] [cursor=pointer]: Online Link
+          - generic [ref=f3e21] [cursor=pointer]: Local Drive
+        - generic [ref=f3e22]:
+          - textbox "YouTube, TikTok Link, or local path..." [ref=f3e23]
+          - button "+ Add" [ref=f3e24] [cursor=pointer]:
+            - generic [ref=f3e25]: +
+            - text: Add
+        - generic [ref=f3e27]:
+          - generic [ref=f3e28]: 
+          - text: No videos added yet
+        - text: 
+        - generic [ref=f3e29]: 0 video(s) in queue
+      - generic [ref=f3e30]:
+        - generic [ref=f3e31]:
+          - generic [ref=f3e32]: 
+          - text: 2. เลือกโหมดการทำงาน
+        - generic [ref=f3e34]:
+          - generic [ref=f3e35] [cursor=pointer]:
+            - generic [ref=f3e36]: 
+            - text: ใส่ซับอย่างเดียว
+          - generic [ref=f3e37] [cursor=pointer]:
+            - generic [ref=f3e38]: 
+            - text: ซับ + ตัดไฮไลท์
+      - generic [ref=f3e39]:
+        - generic [ref=f3e40]:
+          - generic [ref=f3e41]: 
+          - text: 3. ปัญญาประดิษฐ์ AI
+        - generic [ref=f3e42]:
+          - generic [ref=f3e43]: 
+          - strong [ref=f3e44]: Whisper Large-v3
+          - generic [ref=f3e45]: (Local Model)
+        - generic [ref=f3e46]:
+          - checkbox "แปลเป็นภาษาอังกฤษอัตโนมัติ (AI Translation)" [ref=f3e47]
+          - generic [ref=f3e48]: แปลเป็นภาษาอังกฤษอัตโนมัติ (AI Translation)
+        - generic [ref=f3e49]:
+          - checkbox "เว้นวรรคระหว่างคำไทย (Thai Spacing)" [ref=f3e50]
+          - generic [ref=f3e51]: เว้นวรรคระหว่างคำไทย (Thai Spacing)
+      - generic [ref=f3e52]:
+        - generic [ref=f3e53]:
+          - generic [ref=f3e54]: 
+          - text: 4. สัดส่วนและเวลา
+        - generic [ref=f3e55]:
+          - generic [ref=f3e56]: ขนาดหน้าจอ (Aspect Ratio)
+          - combobox [ref=f3e57]:
+            - option "TikTok / Shorts (9:16)" [selected]
+            - option "YouTube Standard (16:9)"
+      - generic [ref=f3e58]:
+        - generic [ref=f3e59]:
+          - generic [ref=f3e60]: 
+          - text: 5. สไตล์ซับไทเทิล (Animation)
+        - generic [ref=f3e61]:
+          - generic [ref=f3e62] [cursor=pointer]:
+            - img "Vibrant TikTok Preview" [ref=f3e63]
+            - text: TikTok Vibrant (Pop)
+          - generic [ref=f3e64] [cursor=pointer]:
+            - img "Gamer Pro Preview" [ref=f3e65]
+            - text: Gamer Pro (Scale)
+          - generic [ref=f3e66] [cursor=pointer]:
+            - img "Minimal Dark Preview" [ref=f3e67]
+            - text: Minimal Dark
+          - generic [ref=f3e68] [cursor=pointer]:
+            - generic [ref=f3e69]: G
+            - text: Gradient Scale
+          - generic [ref=f3e70] [cursor=pointer]:
+            - generic [ref=f3e71]: G
+            - text: Gradient Glow
+          - generic [ref=f3e72] [cursor=pointer]:
+            - generic [ref=f3e73]: "N"
+            - text: Neon Pulse
+        - generic [ref=f3e74]:
+          - generic [ref=f3e75]: Caption Font
+          - combobox [ref=f3e76]:
+            - option "Kanit Bold" [selected]
+            - option "Prompt Bold"
+            - option "Kanit Regular"
+            - option "Arial"
+        - generic [ref=f3e77]:
+          - generic [ref=f3e78]: Caption Font Size
+          - spinbutton [ref=f3e79]: "31"
+        - generic [ref=f3e80]:
+          - generic [ref=f3e81]: Highlight Color
+          - textbox [ref=f3e82]: "#25ff6a"
+        - generic [ref=f3e83]:
+          - generic [ref=f3e84]: Caption Animation
+          - combobox [ref=f3e85]:
+            - option "Smooth Pop" [selected]
+            - option "Slide Fade"
+            - option "Fade Only"
+            - option "None"
+            - option "Gradient Scale"
+            - option "Gradient Glow"
+            - option "Neon Pulse"
+      - button " ผลิตคลิปสมบูรณ์แบบ" [ref=f3e86] [cursor=pointer]:
+        - generic [ref=f3e87]: 
+        - text: ผลิตคลิปสมบูรณ์แบบ
+      - text: 
+    - generic [ref=f3e88]:
+      - generic [ref=f3e89]:
+        - generic [ref=f3e90]: Preview will appear here
+        - generic [ref=f3e91]: Hello
+      - generic [ref=f3e94]:
+        - generic [ref=f3e95]: English preview text
+        - textbox "English preview text" [ref=f3e96]: Hello
+        - button " Replay Preview" [ref=f3e98] [cursor=pointer]:
+          - generic [ref=f3e99]: 
+          - text: Replay Preview
+      - text:  
+      - paragraph [ref=f3e101]:
+        - generic [ref=f3e102]: 
+        - text: ระบบใช้ AI ในการ Master ทุกขั้นตอน ตั้งแต่การตัดต่อไฮไลท์ การจัดกึ่งกลางภาพสำหรับ TikTok และการทำอนิเมชั่นซับไทเทิลแบบเรียลไทม์

@@ -1357,20 +1357,26 @@ PAGE = """
           <input type="hidden" name="source_type" id="source_type" value="url">
           <input type="hidden" name="video_inputs_json" id="video_inputs_json" value="[]">
 
-          <!-- Add input -->
-          <div style="display:flex; gap:10px; margin-bottom:14px;">
+          <!-- URL input (Online Link) -->
+          <div id="url-input-area" style="display:flex; gap:10px; margin-bottom:14px;">
             <input id="video_input" placeholder="YouTube, TikTok Link, or local path..." style="flex:1;">
             <button type="button" onclick="addVideo()" style="padding:15px 20px; border-radius:14px; border:none; background:var(--primary); color:#000; font-weight:700; cursor:pointer; white-space:nowrap;">
               <i class="fas fa-plus"></i> Add
             </button>
           </div>
 
+          <!-- File picker (Local Drive) -->
+          <div id="local-input-area" style="display:none; margin-bottom:14px;">
+            <input type="file" id="local_file_input" accept="video/*" multiple style="display:none;">
+            <button type="button" onclick="document.getElementById('local_file_input').click()" style="width:100%; padding:18px 20px; border-radius:14px; border:2px dashed rgba(255,255,255,0.25); background:rgba(255,255,255,0.04); color:var(--primary); font-weight:700; cursor:pointer; font-size:1rem;">
+              <i class="fas fa-cloud-upload-alt" style="margin-right:8px;"></i> เลือกไฟล์วิดีโอจากเครื่อง
+            </button>
+            <div id="upload_status" style="margin-top:8px; font-size:0.85rem; color:var(--text-dim); text-align:center;"></div>
+          </div>
+
           <!-- Queue list -->
           <div id="video_queue" style="margin-bottom:10px;"></div>
 
-          <button type="button" id="browse_btn" class="btn" style="display:none; border:1.5px solid rgba(255,255,255,0.2); color:white;" onclick="browseFile()">
-            <i class="fas fa-folder-open"></i> เลือกไฟล์วิดีโอ
-          </button>
           <div id="queue_count" style="text-align:right; font-size:0.85rem; color:var(--text-dim); margin-top:8px;">0 videos in queue</div>
         </div>
         
@@ -1625,16 +1631,17 @@ PAGE = """
       document.getElementById('source_type').value = type;
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.getElementById('tab-' + type).classList.add('active');
-      const input = document.getElementById('video_input');
+      const urlArea = document.getElementById('url-input-area');
+      const localArea = document.getElementById('local-input-area');
       const browseBtn = document.getElementById('browse_btn');
       if(type === 'url') {
-        input.placeholder = 'YouTube, TikTok Link...';
-        input.readOnly = false;
+        urlArea.style.display = 'flex';
+        localArea.style.display = 'none';
         browseBtn.style.display = 'none';
       } else {
-        input.placeholder = 'หรือพิมพ์ local path แล้วกด Add';
-        input.readOnly = false;
-        browseBtn.style.display = 'block';
+        urlArea.style.display = 'none';
+        localArea.style.display = 'block';
+        browseBtn.style.display = 'none';
       }
     }
 
@@ -1700,6 +1707,33 @@ PAGE = """
       if(data.file_paths && data.file_paths.length) {
         data.file_paths.forEach(path => addVideoPath(path));
       }
+    }
+
+    async function uploadLocalFiles(files) {
+      const statusEl = document.getElementById('upload_status');
+      const total = files.length;
+      let uploaded = 0;
+      statusEl.textContent = 'กำลังอัปโหลด 0/' + total + ' ...';
+      for (const file of files) {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          const resp = await fetch('/api/media/upload', { method: 'POST', body: formData });
+          const data = await resp.json();
+          if (data.path) {
+            addVideoPath(data.path);
+            uploaded++;
+            statusEl.textContent = 'กำลังอัปโหลด ' + uploaded + '/' + total + ' ...';
+          } else if (data.url) {
+            addVideoPath(data.url);
+            uploaded++;
+            statusEl.textContent = 'กำลังอัปโหลด ' + uploaded + '/' + total + ' ...';
+          }
+        } catch (e) {
+          console.error('Upload failed:', file.name, e);
+        }
+      }
+      statusEl.textContent = uploaded > 0 ? 'อัปโหลดเสร็จ ' + uploaded + '/' + total + ' ไฟล์' : 'อัปโหลดไม่สำเร็จ';
     }
 
     function addVideoPath(path) {
@@ -2119,6 +2153,13 @@ PAGE = """
             e.preventDefault();
             addVideo();
           }
+        });
+
+        // Local file picker
+        document.getElementById('local_file_input').addEventListener('change', (e) => {
+          const files = Array.from(e.target.files || []);
+          if (files.length) uploadLocalFiles(files);
+          e.target.value = '';
         });
 
         // Restore latest output or poll job if needed
