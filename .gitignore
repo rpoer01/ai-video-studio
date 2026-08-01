@@ -13,3 +13,4 @@ uploads/
 .opencode/
 node_modules/
 .env
+.playwright-mcp/
