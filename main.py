@@ -11,6 +11,7 @@ import advanced_video_analyzer
 import highlight_engine
 import highlight_pipeline
 import utils
+import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
@@ -23,6 +24,10 @@ from moviepy import CompositeVideoClip, ImageClip, VideoFileClip, vfx
 # Configure paths and fonts
 font_paths = utils.download_required_fonts()
 OUTPUT_DIR = highlight_engine.OUTPUT_DIR
+THAI_OUTPUT_FOLDER = "thai"
+ENGLISH_OUTPUT_FOLDER = "english"
+for output_folder in (THAI_OUTPUT_FOLDER, ENGLISH_OUTPUT_FOLDER):
+    os.makedirs(os.path.join(OUTPUT_DIR, output_folder), exist_ok=True)
 
 def configure_imagemagick() -> None:
     common_paths = [
@@ -94,9 +99,19 @@ def _trim_jobs() -> None:
 
 
 def _parse_process_form(form) -> dict[str, Any]:
-    video_input = form.get("video_input", "").strip().strip('"').strip("'")
-    if not video_input:
-        raise ValueError("Video input is required.")
+    # Support both single video_input and multi-video queue (video_inputs_json)
+    video_inputs_json = form.get("video_inputs_json", "").strip()
+    if video_inputs_json:
+        try:
+            video_inputs = json.loads(video_inputs_json)
+        except json.JSONDecodeError:
+            video_inputs = []
+    else:
+        raw = form.get("video_input", "").strip().strip('"').strip("'")
+        video_inputs = [raw] if raw else []
+
+    if not video_inputs:
+        raise ValueError("Video input is required. Add at least one video.")
 
     try:
         max_duration = float(form.get("max_duration", "60"))
@@ -111,11 +126,9 @@ def _parse_process_form(form) -> dict[str, Any]:
     caption_highlight_color = form.get("caption_highlight_color", "#25ff6a").strip() or "#25ff6a"
 
     return {
-        "video_input": video_input,
+        "video_inputs": video_inputs,
         "source_type": form.get("source_type", "url"),
         "mode": form.get("mode", "subtitles_only"),
-        "engine": form.get("engine", "assemblyai"),
-        "model_name": form.get("model_name", "base"),
         "language": form.get("language", ""),
         "style_name": form.get("style_name", "Vibrant TikTok"),
         "caption_font_name": form.get("caption_font_name", "Kanit Bold"),
@@ -153,8 +166,6 @@ def _parse_advanced_form(form) -> dict[str, Any]:
     return {
         "video_paths": video_paths,
         "brief": form.get("brief", "").strip(),
-        "engine": form.get("engine", "assemblyai"),
-        "model_name": form.get("model_name", "base"),
         "language": form.get("language", ""),
         "target_duration": max(5.0, min(300.0, target_duration)),
         "aspect_ratio": form.get("aspect_ratio", "9:16"),
@@ -169,22 +180,23 @@ def _parse_advanced_form(form) -> dict[str, Any]:
 
 
 
-def _produce_video(params: dict[str, Any], job_id: str | None = None) -> dict[str, str]:
-    video_path = params["video_input"]
-    if params["source_type"] == "url" and video_path.startswith("http"):
-        if job_id:
-            _set_job(job_id, message="Downloading source video...")
-        video_path = highlight_engine.download_video(video_path)
+def _process_single_video(video_input: str, params: dict[str, Any], index: int, total: int, job_id: str | None = None) -> dict[str, str]:
+    """Process one video through the full pipeline (download → highlights → subtitles)."""
+    if job_id:
+        _set_job(job_id, message=f"[{index}/{total}] Downloading source video...")
+
+    video_path = video_input
+    if video_input.startswith("http"):
+        video_path = highlight_engine.download_video(video_input)
 
     if not os.path.exists(video_path):
         raise RuntimeError(f"Video file was not found: {video_path}")
 
     if params.get("mode") == "highlights":
         if job_id:
-            _set_job(job_id, message="Finding and cutting highlight segments...")
+            _set_job(job_id, message=f"[{index}/{total}] Finding and cutting highlight segments...")
         cut_result = highlight_pipeline.cut_highlight_video(
             video_path=video_path,
-            model_name=params["model_name"],
             language=params["language"] if params["language"] else None,
             aspect_ratio=params["aspect_ratio"],
             target_duration=params["max_duration"],
@@ -194,16 +206,14 @@ def _produce_video(params: dict[str, Any], job_id: str | None = None) -> dict[st
         master_path = cut_result["output_path"]
         print(f"[*] Planned highlight length: {cut_result['duration']:.2f}s across {len(cut_result['segments'])} segments")
     else:
-        # Subtitles Only mode - use original video
         master_path = video_path
         if job_id:
-            _set_job(job_id, message="Processing original video (Full Duration)...")
+            _set_job(job_id, message=f"[{index}/{total}] Processing original video (Full Duration)...")
 
     if job_id:
-        _set_job(job_id, message="Rendering animated captions...")
+        _set_job(job_id, message=f"[{index}/{total}] Rendering animated captions...")
     result = render_pro_video(
         master_path,
-        params["model_name"],
         params["style_name"],
         params["pos_x"],
         params["pos_y"],
@@ -214,12 +224,40 @@ def _produce_video(params: dict[str, Any], job_id: str | None = None) -> dict[st
         caption_highlight_color=params["caption_highlight_color"],
         animation_name=params["animation_name"],
         thai_spacing=params.get("thai_spacing", False),
-        engine=params.get("engine", "assemblyai"),
-        output_suffix="_final",
+        output_suffix=f"_final_{index}",
     )
     if job_id:
-        _set_job(job_id, message="Final video ready. Updating preview...")
+        _set_job(job_id, message=f"[{index}/{total}] Video {index} complete.")
     return result
+
+
+def _produce_videos(params: dict[str, Any], job_id: str | None = None) -> dict[str, Any]:
+    """Process all videos in the queue sequentially — each completes fully before the next starts."""
+    video_inputs = params["video_inputs"]
+    total = len(video_inputs)
+    all_results = []
+
+    for i, video_input in enumerate(video_inputs):
+        if job_id:
+            _set_job(job_id, message=f"Starting video {i+1}/{total}...")
+        try:
+            result = _process_single_video(video_input, params, i + 1, total, job_id)
+            all_results.append(result)
+        except Exception as exc:
+            print(f"[!] Video {i+1}/{total} failed: {exc}")
+            all_results.append({"error": str(exc), "video": video_input})
+            if job_id:
+                _set_job(job_id, message=f"Video {i+1}/{total} failed: {exc}. Continuing with next...")
+            # Continue to next video even if one fails
+
+    if job_id:
+        _set_job(job_id, message=f"Completed {len(all_results)}/{total} videos.")
+
+    return {
+        "results": all_results,
+        "total": total,
+        "completed": len(all_results),
+    }
 
 
 def _produce_advanced_video(params: dict[str, Any], job_id: str | None = None) -> dict[str, Any]:
@@ -228,7 +266,6 @@ def _produce_advanced_video(params: dict[str, Any], job_id: str | None = None) -
     analysis = advanced_video_analyzer.analyze_and_render(
         video_paths=params["video_paths"],
         brief=params["brief"],
-        model_name=params["model_name"],
         language=params["language"] if params["language"] else None,
         target_duration=params["target_duration"],
         aspect_ratio=params["aspect_ratio"],
@@ -240,7 +277,6 @@ def _produce_advanced_video(params: dict[str, Any], job_id: str | None = None) -
             _set_job(job_id, message="Adding automatic subtitles to advanced cut...")
         result = render_pro_video(
             output_path,
-            params["model_name"],
             params["style_name"],
             0.5,
             0.66,
@@ -251,14 +287,14 @@ def _produce_advanced_video(params: dict[str, Any], job_id: str | None = None) -
             caption_highlight_color=params.get("caption_highlight_color", "#25ff6a"),
             animation_name=params["animation_name"],
             thai_spacing=params.get("thai_spacing", False),
-            engine=params.get("engine", "assemblyai"),
             output_suffix="_subtitled",
         )
     else:
-        output_basename = os.path.basename(output_path)
+        detected_text = " ".join(str(shot.get("text", "")) for shot in analysis.get("selected", []))
+        output_path = _move_output_to_language_folder(output_path, params["language"], detected_text)
         result = {
             "output_video": os.path.abspath(output_path),
-            "output_url": f"/outputs/{quote(output_basename)}",
+            "output_url": _output_url_for_path(output_path),
         }
     result["analysis"] = analysis
     return result
@@ -266,9 +302,10 @@ def _produce_advanced_video(params: dict[str, Any], job_id: str | None = None) -
 
 def _run_job(job_id: str, params: dict[str, Any]) -> None:
     try:
-        _set_job(job_id, status="running", message="Starting AI Studio production...")
-        result = _produce_video(params, job_id=job_id)
-        _set_job(job_id, status="done", message="Completed. Preview is ready.", result=result)
+        video_count = len(params["video_inputs"])
+        _set_job(job_id, status="running", message=f"Starting AI Studio production for {video_count} video(s)...")
+        result = _produce_videos(params, job_id=job_id)
+        _set_job(job_id, status="done", message=f"Completed {result['completed']}/{result['total']} videos.", result=result)
     except Exception as exc:
         traceback.print_exc()
         _set_job(job_id, status="error", message=str(exc), traceback=traceback.format_exc())
@@ -318,18 +355,60 @@ def _start_advanced_job(params: dict[str, Any]) -> str:
     return job_id
 
 
+def _output_url_for_path(output_path: str, cache_bust: bool = False) -> str:
+    output_root = os.path.abspath(OUTPUT_DIR)
+    abs_path = os.path.abspath(output_path)
+    rel_path = os.path.relpath(abs_path, output_root).replace(os.sep, "/")
+    url = f"/outputs/{quote(rel_path, safe='/')}"
+    if cache_bust and os.path.exists(abs_path):
+        url += f"?v={int(os.path.getmtime(abs_path))}"
+    return url
+
+
+def _detect_output_language(language: str | None = None, text: str = "") -> str:
+    normalized = str(language or "").strip().lower()
+    if normalized in {"th", "tha", "thai", "th-th"}:
+        return "thai"
+    if _has_thai(text):
+        return "thai"
+    return "english"
+
+
+def _move_output_to_language_folder(output_path: str, language: str | None = None, text: str = "") -> str:
+    if not output_path or not os.path.exists(output_path):
+        return output_path
+
+    output_root = os.path.abspath(OUTPUT_DIR)
+    abs_path = os.path.abspath(output_path)
+    if not abs_path.startswith(output_root + os.sep):
+        return output_path
+
+    folder_name = THAI_OUTPUT_FOLDER if _detect_output_language(language, text) == "thai" else ENGLISH_OUTPUT_FOLDER
+    target_dir = os.path.join(output_root, folder_name)
+    os.makedirs(target_dir, exist_ok=True)
+
+    target_path = os.path.join(target_dir, os.path.basename(abs_path))
+    if os.path.abspath(target_path) == abs_path:
+        return abs_path
+    if os.path.exists(target_path):
+        stem, ext = os.path.splitext(os.path.basename(abs_path))
+        target_path = os.path.join(target_dir, f"{stem}_{int(time.time())}{ext}")
+    shutil.move(abs_path, target_path)
+    return os.path.abspath(target_path)
+
+
 def _latest_output_result() -> dict[str, str] | None:
-    pattern = os.path.join(OUTPUT_DIR, "*_final.mp4")
-    files = [path for path in glob.glob(pattern) if os.path.isfile(path)]
+    pattern = os.path.join(OUTPUT_DIR, "**", "*_final*.mp4")
+    files = [path for path in glob.glob(pattern, recursive=True) if os.path.isfile(path)]
     if not files:
         return None
     latest = max(files, key=os.path.getmtime)
-    output_basename = os.path.basename(latest)
-    return {
+    result = {
         "output_video": os.path.abspath(latest),
-        "output_url": f"/outputs/{quote(output_basename)}?v={int(os.path.getmtime(latest))}",
+        "output_url": _output_url_for_path(latest, cache_bust=True),
         "updated_at": os.path.getmtime(latest),
     }
+    return {"results": [result], "total": 1, "completed": 1}
 
 # --- Ultra Pro Subtitle Engine v2 ---
 
@@ -364,6 +443,36 @@ SUBTITLE_STYLES = {
         "stroke_width": 9,
         "bg_color": "rgba(0,0,0,0.6)",
         "shadow": False
+    },
+    "Gradient Scale": {
+        "font": font_paths.get("Prompt-Bold", "Arial"),
+        "font_size": CAPTION_RENDER_FONT_SIZE,
+        "color": "white",
+        "highlight_color": "#00ffcc",
+        "stroke_color": "black",
+        "stroke_width": 9,
+        "shadow": True,
+        "gradient_colors": ["#00ffcc", "#3366ff", "#ff00ff"]
+    },
+    "Gradient Glow": {
+        "font": font_paths.get("Kanit-Bold", "Arial"),
+        "font_size": CAPTION_RENDER_FONT_SIZE,
+        "color": "white",
+        "highlight_color": "#ffcc00",
+        "stroke_color": "black",
+        "stroke_width": 9,
+        "shadow": False,
+        "bg_gradient": ["rgba(0,0,0,0.7)", "rgba(20,0,50,0.4)"]
+    },
+    "Neon Pulse": {
+        "font": font_paths.get("Prompt-Bold", "Arial"),
+        "font_size": CAPTION_RENDER_FONT_SIZE,
+        "color": "#ffffff",
+        "highlight_color": "#00ffff",
+        "stroke_color": "#ff00ff",
+        "stroke_width": 12,
+        "shadow": False,
+        "neon_glow": ["#ff00ff", "#00ffff", "#3366ff"]
     }
 }
 
@@ -379,6 +488,9 @@ CAPTION_ANIMATIONS = {
     "Slide Fade": {"mode": "slide", "fade": 0.14, "slide": 20, "start_scale": 0.98, "end_scale": 0.99},
     "Fade Only": {"mode": "fade", "fade": 0.16, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
     "None": {"mode": "none", "fade": 0.0, "slide": 0, "start_scale": 1.0, "end_scale": 1.0},
+    "Gradient Scale": {"mode": "pop", "fade": 0.15, "slide": 16, "start_scale": 0.7, "end_scale": 1.03},
+    "Gradient Glow": {"mode": "fade", "fade": 0.2, "slide": 0, "start_scale": 0.95, "end_scale": 0.98},
+    "Neon Pulse": {"mode": "pop", "fade": 0.14, "slide": 8, "start_scale": 0.88, "end_scale": 1.02},
 }
 
 
@@ -638,6 +750,79 @@ def _layout_caption_words(words: list[str], style, video_w: int, video_h: int, s
         line_metrics.append((line_w, bbox[3] - bbox[1]))
     return font, stroke_width, lines, line_metrics, max(8, int(font_size * 0.16))
 
+def _parse_rgba(color) -> tuple:
+    if isinstance(color, str):
+        color = color.strip()
+        if color.startswith("rgba"):
+            import re
+            m = re.match(r"rgba\((\d+\.?\d*)\s*,\s*(\d+\.?\d*)\s*,\s*(\d+\.?\d*)\s*,\s*([\d.]+)\)", color)
+            if m:
+                return (int(m.group(1)), int(m.group(2)), int(m.group(3)), int(float(m.group(4)) * 255))
+        if color.startswith("rgb"):
+            import re
+            m = re.match(r"rgb\((\d+\.?\d*)\s*,\s*(\d+\.?\d*)\s*,\s*(\d+\.?\d*)\)", color)
+            if m:
+                return (int(m.group(1)), int(m.group(2)), int(m.group(3)), 255)
+        from PIL import ImageColor
+        try:
+            return ImageColor.getcolor(color, "RGBA")
+        except Exception:
+            return (255, 255, 255, 255)
+    return tuple(color)
+
+def _make_gradient(w: int, h: int, colors: list) -> Image.Image:
+    parsed = [_parse_rgba(c) for c in colors]
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    if h <= 0 or w <= 0:
+        return img
+    draw = ImageDraw.Draw(img)
+    segs = len(parsed) - 1
+    for y in range(h):
+        t = y / max(1, h - 1)
+        seg = min(int(t * segs), segs - 1) if segs > 0 else 0
+        lt = (t * segs) - seg if segs > 0 else 0
+        c1 = parsed[seg]
+        c2 = parsed[min(seg + 1, len(parsed) - 1)]
+        draw.line([(0, y), (w, y)], fill=(
+            int(c1[0] + (c2[0] - c1[0]) * lt),
+            int(c1[1] + (c2[1] - c1[1]) * lt),
+            int(c1[2] + (c2[2] - c1[2]) * lt),
+            int(c1[3] + (c2[3] - c1[3]) * lt),
+        ))
+    return img
+
+def _gradient_word_image(word: str, font, colors: list, stroke_width: int = 0, stroke_color=None) -> Image.Image:
+    scratch = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(scratch)
+    bbox = sd.textbbox((0, 0), word, font=font, stroke_width=stroke_width)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    if tw <= 0 or th <= 0:
+        return None
+    mask = Image.new("L", (tw, th), 0)
+    md = ImageDraw.Draw(mask)
+    md.text((-bbox[0], -bbox[1]), word, font=font, fill=255, stroke_width=stroke_width, stroke_fill=255)
+    grad = _make_gradient(tw, th, colors)
+    result = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
+    result.paste(grad, (0, 0), mask)
+    return result
+
+def _neon_glow_layer(word: str, font, neon_colors: list, stroke_width: int, blur_radius: int = 6) -> Image.Image:
+    scratch = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(scratch)
+    bbox = sd.textbbox((0, 0), word, font=font, stroke_width=stroke_width)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    if tw <= 0 or th <= 0:
+        return None
+    glow = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    for i, neon_color in enumerate(neon_colors):
+        offset = (i - len(neon_colors) // 2) * 2
+        gd.text((-bbox[0] + offset, -bbox[1] + offset), word, font=font,
+                fill=_parse_rgba(neon_color), stroke_width=stroke_width + 2,
+                stroke_fill=_parse_rgba(neon_color))
+    glow = glow.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+    return glow
+
 def _render_karaoke_caption_image(words: list[str], active_index: int, style, video_w: int, video_h: int, spacing: bool = False) -> Image.Image:
     font, stroke_width, lines, line_metrics, gap = _layout_caption_words(words, style, video_w, video_h, spacing=spacing)
     pad_x = max(34, int(video_w * 0.035))
@@ -646,11 +831,22 @@ def _render_karaoke_caption_image(words: list[str], active_index: int, style, vi
     img_h = int(sum(h for _, h in line_metrics) + gap * max(0, len(lines) - 1) + pad_y * 2)
     img = Image.new("RGBA", (img_w, img_h), (0, 0, 0, 0))
 
+    # Background gradient
+    if "bg_gradient" in style:
+        bg = _make_gradient(img_w, img_h, style["bg_gradient"])
+        bg_mask = Image.new("L", (img_w, img_h), 0)
+        bgd = ImageDraw.Draw(bg_mask)
+        bgd.rounded_rectangle([(0, 0), (img_w - 1, img_h - 1)], radius=min(16, img_w // 12), fill=255)
+        img = Image.alpha_composite(img, bg)
+        img.paste(bg, (0, 0), bg_mask)
+
     shadow_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     shadow_draw = ImageDraw.Draw(shadow_layer)
     draw = ImageDraw.Draw(img)
     word_cursor = 0
     y = pad_y
+    has_gradient = "gradient_colors" in style
+    has_neon = "neon_glow" in style
 
     for line, (line_w, line_h) in zip(lines, line_metrics):
         full_line_text = _caption_join(line, spacing=spacing)
@@ -658,18 +854,15 @@ def _render_karaoke_caption_image(words: list[str], active_index: int, style, vi
         draw_y = y - line_bbox[1]
         x_base = (img_w - line_w) / 2
         
-        # 1. Render base line (all words in default color)
-        # Using a slight blur on shadow for better legibility
+        # 1. Render base line
         shadow_draw.text((x_base + 5, draw_y + 6), full_line_text, font=font, fill=(0, 0, 0, 210), stroke_width=stroke_width + 2, stroke_fill=(0, 0, 0, 230))
         draw.text((x_base, draw_y), full_line_text, font=font, fill=style["color"], stroke_width=stroke_width, stroke_fill=style["stroke_color"])
 
-        # 2. Render the active word highlight exactly on top
+        # 2. Render the active word highlight
         for line_index, word in enumerate(line):
             if word_cursor == active_index:
-                # Calculate the exact x offset for the active word within the line
                 prefix = _caption_join(line[:line_index], spacing=spacing)
                 if prefix:
-                    # In Thai, no space. In other languages, a space is added between tokens in _caption_join(line).
                     if spacing or (not _has_thai(prefix[-1]) and not _has_thai(word[0])):
                         prefix += " "
                     word_x = x_base + draw.textlength(prefix, font=font)
@@ -677,8 +870,24 @@ def _render_karaoke_caption_image(words: list[str], active_index: int, style, vi
                     word_x = x_base
                 
                 active_stroke = stroke_width + 1
-                shadow_draw.text((word_x + 5, draw_y + 6), word, font=font, fill=(0, 0, 0, 210), stroke_width=active_stroke + 2, stroke_fill=(0, 0, 0, 230))
-                draw.text((word_x, draw_y), word, font=font, fill=style["highlight_color"], stroke_width=active_stroke, stroke_fill=style["stroke_color"])
+
+                if has_neon:
+                    neon = _neon_glow_layer(word, font, style["neon_glow"], active_stroke + 2, blur_radius=8)
+                    if neon:
+                        shadow_layer.paste(neon, (word_x - 4, draw_y - 4), neon)
+                    draw.text((word_x, draw_y), word, font=font, fill=style["highlight_color"],
+                              stroke_width=active_stroke, stroke_fill=style["stroke_color"])
+                elif has_gradient:
+                    grad_img = _gradient_word_image(word, font, style["gradient_colors"], stroke_width=active_stroke, stroke_color=style.get("stroke_color"))
+                    if grad_img:
+                        img.paste(grad_img, (word_x, draw_y), grad_img)
+                    else:
+                        draw.text((word_x, draw_y), word, font=font, fill=style["highlight_color"],
+                                  stroke_width=active_stroke, stroke_fill=style["stroke_color"])
+                else:
+                    shadow_draw.text((word_x + 5, draw_y + 6), word, font=font, fill=(0, 0, 0, 210), stroke_width=active_stroke + 2, stroke_fill=(0, 0, 0, 230))
+                    draw.text((word_x, draw_y), word, font=font, fill=style["highlight_color"],
+                              stroke_width=active_stroke, stroke_fill=style["stroke_color"])
             
             word_cursor += 1
         y += line_h + gap
@@ -823,7 +1032,6 @@ def create_pro_subtitle_clips(full_text, words, style, video_w, video_h, pos_x, 
 
 def render_pro_video(
     video_path: str,
-    model_name: str,
     style_name: str,
     pos_x: float,
     pos_y: float,
@@ -834,7 +1042,6 @@ def render_pro_video(
     caption_highlight_color: str | None = None,
     animation_name: str = "Smooth Pop",
     thai_spacing: bool = False,
-    engine: str = "assemblyai",
     output_suffix="_pro_final"
 ) -> dict[str, str]:
     style = dict(SUBTITLE_STYLES.get(style_name, SUBTITLE_STYLES["Vibrant TikTok"]))
@@ -847,21 +1054,12 @@ def render_pro_video(
     if caption_highlight_color:
         style["highlight_color"] = caption_highlight_color
     
-    if engine == "assemblyai":
-        print(f"[*] Analyzing audio with AssemblyAI (Cloud API)...")
-        try:
-            result = ai_models.transcribe_with_assemblyai(video_path, language=language)
-        except Exception as e:
-            print(f"[!] AssemblyAI failed, falling back to local Whisper: {e}")
-            engine = "whisper" # Force fallback
-            
-    if engine == "whisper":
-        print(f"[*] Analyzing audio with Local Whisper ({model_name})...")
-        model = ai_models.get_whisper_model(model_name)
-        transcribe_opts = {"fp16": False, "word_timestamps": True, "verbose": False}
-        if language: transcribe_opts["language"] = language
-        if translate: transcribe_opts["task"] = "translate"
-        result = model.transcribe(video_path, **transcribe_opts)
+    print(f"[*] Analyzing audio with Whisper Large-v3...")
+    model = ai_models.get_whisper_model()
+    transcribe_opts = {"fp16": False, "word_timestamps": True, "verbose": False}
+    if language: transcribe_opts["language"] = language
+    if translate: transcribe_opts["task"] = "translate"
+    result = model.transcribe(video_path, **transcribe_opts)
     
     video = VideoFileClip(video_path)
     subtitle_clips = []
@@ -926,10 +1124,15 @@ def render_pro_video(
         try: c.close()
         except: pass
     
-    output_basename = os.path.basename(output_path)
+    transcript_text = " ".join(str(segment.get("text", "")) for segment in result.get("segments", []))
+    output_path = _move_output_to_language_folder(
+        output_path,
+        None if translate else language,
+        transcript_text,
+    )
     return {
         "output_video": os.path.abspath(output_path),
-        "output_url": f"/outputs/{quote(output_basename)}",
+        "output_url": _output_url_for_path(output_path),
     }
 
 # --- Web UI (Glassmorphism Studio v4.5) ---
@@ -1146,16 +1349,29 @@ PAGE = """
     <div class="sidebar">
       <form id="processForm" method="post" action="/process">
         <div class="glass-card">
-          <div class="section-title"><i class="fas fa-download"></i> 1. นำเข้าวิดีโอ (URL/FILE)</div>
+          <div class="section-title"><i class="fas fa-list"></i> 1. คิววิดีโอ (Video Queue)</div>
           <div class="source-tabs">
             <div class="tab active" id="tab-url" onclick="setSource('url')">Online Link</div>
             <div class="tab" id="tab-local" onclick="setSource('local')">Local Drive</div>
           </div>
           <input type="hidden" name="source_type" id="source_type" value="url">
-          <input name="video_input" id="video_input" placeholder="YouTube, TikTok Link..." required value="{{ video_input }}">
-          <button type="button" id="browse_btn" class="btn" style="display:none; border:1.5px solid rgba(255,255,255,0.2); margin-top:15px; color: white;" onclick="browseFile()">
+          <input type="hidden" name="video_inputs_json" id="video_inputs_json" value="[]">
+
+          <!-- Add input -->
+          <div style="display:flex; gap:10px; margin-bottom:14px;">
+            <input id="video_input" placeholder="YouTube, TikTok Link, or local path..." style="flex:1;">
+            <button type="button" onclick="addVideo()" style="padding:15px 20px; border-radius:14px; border:none; background:var(--primary); color:#000; font-weight:700; cursor:pointer; white-space:nowrap;">
+              <i class="fas fa-plus"></i> Add
+            </button>
+          </div>
+
+          <!-- Queue list -->
+          <div id="video_queue" style="margin-bottom:10px;"></div>
+
+          <button type="button" id="browse_btn" class="btn" style="display:none; border:1.5px solid rgba(255,255,255,0.2); color:white;" onclick="browseFile()">
             <i class="fas fa-folder-open"></i> เลือกไฟล์วิดีโอ
           </button>
+          <div id="queue_count" style="text-align:right; font-size:0.85rem; color:var(--text-dim); margin-top:8px;">0 videos in queue</div>
         </div>
         
         <div class="glass-card">
@@ -1175,20 +1391,8 @@ PAGE = """
 
         <div class="glass-card">
           <div class="section-title"><i class="fas fa-brain"></i> 3. ปัญญาประดิษฐ์ AI</div>
-          <div class="form-group">
-            <label>Transcription Engine (ตัวถอดรหัสเสียง)</label>
-            <select name="engine">
-              <option value="assemblyai">AssemblyAI (Cloud API - แนะนำ)</option>
-              <option value="whisper" selected>Whisper (Local Model - รันในเครื่อง)</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Whisper Sync Model (สำหรับโหมด Local)</label>
-            <select name="model_name">
-              <option value="base">Base (เร็วที่สุด)</option>
-              <option value="small">Small (แม่นยำขึ้น)</option>
-              <option value="medium" selected>Medium (ระดับโปร)</option>
-            </select>
+          <div style="padding:10px 0; color:var(--primary); display:flex; align-items:center; gap:10px;">
+            <i class="fas fa-microchip"></i> <strong>Whisper Large-v3</strong> <span style="color:var(--text-dim); font-size:0.9rem;">(Local Model)</span>
           </div>
           <div class="checkbox-group">
             <input type="checkbox" name="translate" id="translate">
@@ -1231,6 +1435,18 @@ PAGE = """
               <img src="/static/preview/Minimal_Dark.png" alt="Minimal Dark Preview" class="style-preview-img">
               <span>Minimal Dark</span>
             </div>
+            <div class="style-card" id="style-Gradient Scale" onclick="setStyle('Gradient Scale')">
+              <div class="style-card-icon" style="background:linear-gradient(135deg,#00ffcc,#3366ff,#ff00ff);border-radius:8px;height:60px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;color:#fff;">G</div>
+              <span>Gradient Scale</span>
+            </div>
+            <div class="style-card" id="style-Gradient Glow" onclick="setStyle('Gradient Glow')">
+              <div class="style-card-icon" style="background:linear-gradient(135deg,rgba(0,0,0,0.8),rgba(100,0,200,0.5));border-radius:8px;height:60px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;color:#ffcc00;">G</div>
+              <span>Gradient Glow</span>
+            </div>
+            <div class="style-card" id="style-Neon Pulse" onclick="setStyle('Neon Pulse')">
+              <div class="style-card-icon" style="background:#111;border:2px solid #ff00ff;border-radius:8px;height:60px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;color:#00ffff;text-shadow:0 0 12px #ff00ff,0 0 24px #00ffff;">N</div>
+              <span>Neon Pulse</span>
+            </div>
           </div>          <div class="form-group" style="margin-top:22px;">
             <label>Caption Font</label>
             <select name="caption_font_name" id="caption_font_name" onchange="setPreviewFont(this.value)">
@@ -1256,6 +1472,9 @@ PAGE = """
               <option value="Slide Fade">Slide Fade</option>
               <option value="Fade Only">Fade Only</option>
               <option value="None">None</option>
+              <option value="Gradient Scale">Gradient Scale</option>
+              <option value="Gradient Glow">Gradient Glow</option>
+              <option value="Neon Pulse">Neon Pulse</option>
             </select>
           </div>
           <input type="hidden" name="style_name" id="style_name" value="Vibrant TikTok">
@@ -1295,14 +1514,22 @@ PAGE = """
         </div>
       </div>
       
-      {% if result %}
+      {% if result and result.results %}
       <div class="status status-ok">
         <div style="font-size: 1.3rem; font-weight: 700; margin-bottom: 12px; display:flex; align-items:center; gap:12px;">
-          <i class="fas fa-check-circle" style="color:var(--primary)"></i> ผลิตเสร็จสิ้น 1 ไฟล์สมบูรณ์แบบ!
+          <i class="fas fa-check-circle" style="color:var(--primary)"></i> ผลิตเสร็จสิ้น {{ result.completed }}/{{ result.total }} ไฟล์!
         </div>
-        <p>ตำแหน่งไฟล์:</p>
-        <p><code style="background:#000; padding:12px; border-radius:12px; display:block; margin-top:10px; font-size:0.9rem; border:1px solid #333;">{{ result.output_video }}</code></p>
-        <video src="{{ result.output_url }}" controls playsinline style="width:100%; max-height:70vh; margin-top:16px; border-radius:14px; background:#000;"></video>
+        {% for r in result.results %}
+        <div style="padding:12px; margin-bottom:10px; border-radius:12px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.08);">
+          {% if r.error %}
+          <p style="color:#ff7675;">Video {{ loop.index }}: Failed — {{ r.error }}</p>
+          {% else %}
+          <p><strong>Video {{ loop.index }}</strong></p>
+          <p><code style="background:#000; padding:8px; border-radius:8px; display:block; margin-top:6px; font-size:0.85rem; border:1px solid #333; word-break:break-all;">{{ r.output_video }}</code></p>
+          <video src="{{ r.output_url }}" controls playsinline style="width:100%; max-height:50vh; margin-top:10px; border-radius:12px; background:#000;"></video>
+          {% endif %}
+        </div>
+        {% endfor %}
       </div>
       {% endif %}
       
@@ -1317,11 +1544,9 @@ PAGE = """
 
       <div class="status status-ok" id="async_result" style="display:none;">
         <div style="font-size: 1.3rem; font-weight: 700; margin-bottom: 12px; display:flex; align-items:center; gap:12px;">
-          <i class="fas fa-check-circle" style="color:var(--primary)"></i> Render completed
+          <i class="fas fa-check-circle" style="color:var(--primary)"></i> <span id="async_result_title">Render completed</span>
         </div>
-        <p>Output file:</p>
-        <p><code id="async_output_path" style="background:#000; padding:12px; border-radius:12px; display:block; margin-top:10px; font-size:0.9rem; border:1px solid #333;"></code></p>
-        <video id="async_output_video" controls playsinline style="width:100%; max-height:70vh; margin-top:16px; border-radius:14px; background:#000;"></video>
+        <div id="async_output_html"></div>
       </div>
 
       <div class="status status-err" id="async_error" style="display:none;">
@@ -1359,6 +1584,27 @@ PAGE = """
         glow: 'rgba(37,255,106,0.45)',
         shadow: '0 3px 0 #000',
         stroke: '#000'
+      },
+      'Gradient Scale': {
+        color: '#fff',
+        highlight: '#00ffcc',
+        glow: 'linear-gradient(135deg, #00ffcc, #3366ff, #ff00ff)',
+        shadow: '0 4px 0 #000, 0 0 20px rgba(0,255,204,0.6)',
+        stroke: '#000'
+      },
+      'Gradient Glow': {
+        color: '#fff',
+        highlight: '#ffcc00',
+        glow: 'rgba(255,204,0,0.8)',
+        shadow: '0 3px 0 #000',
+        stroke: '#000'
+      },
+      'Neon Pulse': {
+        color: '#fff',
+        highlight: '#00ffff',
+        glow: '0 0 10px #ff00ff, 0 0 20px #00ffff, 0 0 40px #3366ff',
+        shadow: '0 0 10px #ff00ff, 0 0 20px #00ffff',
+        stroke: '#ff00ff'
       }
     };
 
@@ -1366,7 +1612,10 @@ PAGE = """
       'Smooth Pop': { enterMs: 240, exitMs: 180, startScale: 0.9, endScale: 0.98, enterY: '14px', exitY: '-8px', fromOpacity: 0, toOpacity: 0 },
       'Slide Fade': { enterMs: 260, exitMs: 190, startScale: 0.98, endScale: 0.99, enterY: '22px', exitY: '-10px', fromOpacity: 0, toOpacity: 0 },
       'Fade Only': { enterMs: 190, exitMs: 170, startScale: 1, endScale: 1, enterY: '0px', exitY: '0px', fromOpacity: 0, toOpacity: 0 },
-      'None': { enterMs: 0, exitMs: 0, startScale: 1, endScale: 1, enterY: '0px', exitY: '0px', fromOpacity: 1, toOpacity: 1 }
+      'None': { enterMs: 0, exitMs: 0, startScale: 1, endScale: 1, enterY: '0px', exitY: '0px', fromOpacity: 1, toOpacity: 1 },
+      'Gradient Scale': { enterMs: 260, exitMs: 200, startScale: 0.75, endScale: 1.03, enterY: '16px', exitY: '-6px', fromOpacity: 0, toOpacity: 0 },
+      'Gradient Glow': { enterMs: 220, exitMs: 200, startScale: 0.95, endScale: 0.98, enterY: '0px', exitY: '0px', fromOpacity: 0, toOpacity: 0 },
+      'Neon Pulse': { enterMs: 250, exitMs: 190, startScale: 0.88, endScale: 1.02, enterY: '8px', exitY: '-4px', fromOpacity: 0, toOpacity: 0 }
     };
 
     let previewTimer = null;
@@ -1379,12 +1628,12 @@ PAGE = """
       const input = document.getElementById('video_input');
       const browseBtn = document.getElementById('browse_btn');
       if(type === 'url') {
-        input.placeholder = 'YouTube/TikTok Link...';
+        input.placeholder = 'YouTube, TikTok Link...';
         input.readOnly = false;
         browseBtn.style.display = 'none';
       } else {
-        input.placeholder = 'เลือกไฟล์วิดีโอจากเครื่อง';
-        input.readOnly = true;
+        input.placeholder = 'หรือพิมพ์ local path แล้วกด Add';
+        input.readOnly = false;
         browseBtn.style.display = 'block';
       }
     }
@@ -1401,13 +1650,64 @@ PAGE = """
       }
     }
 
+    function escapeHtml(text) {
+      const d = document.createElement('div');
+      d.textContent = text;
+      return d.innerHTML;
+    }
+
+    let videoQueue = [];
+
+    function renderQueue() {
+      const container = document.getElementById('video_queue');
+      if (!container) return;
+      if (videoQueue.length === 0) {
+        container.innerHTML = '<div style="padding:14px; text-align:center; color:var(--text-dim); font-size:0.9rem; border:1px dashed rgba(255,255,255,0.12); border-radius:12px;"><i class="fas fa-video"></i> No videos added yet</div>';
+      } else {
+        container.innerHTML = videoQueue.map((path, i) => `
+          <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:rgba(0,0,0,0.3); border-radius:12px; margin-bottom:6px; border:1px solid rgba(255,255,255,0.08);">
+            <span style="flex-shrink:0; width:24px; height:24px; border-radius:50%; background:var(--primary); color:#000; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700;">${i+1}</span>
+            <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.9rem; direction:rtl; text-align:left;">${escapeHtml(path)}</span>
+            <button type="button" onclick="removeVideo(${i})" style="background:none; border:none; color:#ff4f73; cursor:pointer; padding:6px; font-size:1.1rem;"><i class="fas fa-times-circle"></i></button>
+          </div>
+        `).join('');
+      }
+      document.getElementById('video_inputs_json').value = JSON.stringify(videoQueue);
+      const countEl = document.getElementById('queue_count');
+      if (countEl) countEl.textContent = videoQueue.length + ' video(s) in queue';
+    }
+
+    function addVideo() {
+      const input = document.getElementById('video_input');
+      const path = input.value.trim().replace(/^["']|["']$/g, '');
+      if (!path) return;
+      if (videoQueue.includes(path)) return;
+      videoQueue.push(path);
+      input.value = '';
+      renderQueue();
+      // Preview first video
+      if (videoQueue.length === 1) setPreviewVideo(path);
+    }
+
+    function removeVideo(index) {
+      videoQueue.splice(index, 1);
+      renderQueue();
+    }
+
     async function browseFile() {
       const resp = await fetch('/api/browse');
       const data = await resp.json();
-      if(data.file_path) {
-        document.getElementById('video_input').value = data.file_path;
-        setPreviewVideo(data.file_path);
+      if(data.file_paths && data.file_paths.length) {
+        data.file_paths.forEach(path => addVideoPath(path));
       }
+    }
+
+    function addVideoPath(path) {
+      if (!path) return;
+      if (videoQueue.includes(path)) return;
+      videoQueue.push(path);
+      renderQueue();
+      if (videoQueue.length === 1) setPreviewVideo(path);
     }
 
     function setPreviewVideo(filePath) {
@@ -1682,27 +1982,52 @@ PAGE = """
     }
 
     function showAsyncResult(result) {
-      if(!result || !result.output_url) {
-        showAsyncError('Render finished, but the output path was not returned.');
+      // result contains { results: [...], total, completed }
+      const results = (result && result.results) || [];
+      if (results.length === 0) {
+        showAsyncError('No outputs were produced.');
         return;
       }
+
       const previewEmpty = document.getElementById('preview_empty');
       const previewVideo = document.getElementById('preview_video');
       if(previewEmpty) previewEmpty.style.display = 'none';
-      const cacheBust = result.output_url.includes('?') ? `&t=${Date.now()}` : `?t=${Date.now()}`;
-      const outputUrl = result.output_url + cacheBust;
-      if(previewVideo) {
-        previewVideo.src = outputUrl;
-        previewVideo.style.display = 'block';
-        previewVideo.load();
+
+      // Show first successful result in preview player
+      const firstOk = results.find(r => r.output_url);
+      if (firstOk) {
+        const cacheBust = firstOk.output_url.includes('?') ? `&t=${Date.now()}` : `?t=${Date.now()}`;
+        const outputUrl = firstOk.output_url + cacheBust;
+        if(previewVideo) {
+          previewVideo.src = outputUrl;
+          previewVideo.style.display = 'block';
+          previewVideo.load();
+        }
       }
 
       document.getElementById('loader').style.display = 'none';
       document.getElementById('async_error').style.display = 'none';
-      document.getElementById('async_output_path').textContent = result.output_video;
-      const outputVideo = document.getElementById('async_output_video');
-      outputVideo.src = outputUrl;
-      outputVideo.load();
+
+      // Build the output list HTML
+      let outputHtml = '';
+      results.forEach((r, i) => {
+        if (r.error) {
+          outputHtml += `<div style="padding:14px; margin-bottom:10px; border-radius:12px; background:rgba(255,51,102,0.1); border:1px solid var(--accent); color:#ff7675;">
+            <strong>Video ${i+1}:</strong> Failed — ${escapeHtml(r.error)}
+          </div>`;
+        } else if (r.output_url) {
+          const cacheBust = r.output_url.includes('?') ? `&t=${Date.now()}` : `?t=${Date.now()}`;
+          outputHtml += `
+            <div style="padding:16px; margin-bottom:14px; border-radius:14px; background:rgba(0,255,204,0.06); border:1px solid rgba(0,255,204,0.2);">
+              <strong style="color:var(--primary);">Video ${i+1}</strong>
+              <p style="font-size:0.85rem; color:var(--text-dim); margin:6px 0 10px; word-break:break-all;"><code style="background:#000; padding:6px 10px; border-radius:8px; font-size:0.8rem;">${escapeHtml(r.output_video)}</code></p>
+              <video src="${r.output_url}${cacheBust}" controls playsinline style="width:100%; max-height:50vh; border-radius:10px; background:#000;"></video>
+            </div>`;
+        }
+      });
+
+      document.getElementById('async_output_html').innerHTML = outputHtml;
+      document.getElementById('async_result_title').textContent = `Completed ${results.length} video(s)`;
       document.getElementById('async_result').style.display = 'block';
       document.getElementById('async_result').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -1748,6 +2073,12 @@ PAGE = """
 
     document.getElementById('processForm').addEventListener('submit', async (event) => {
       event.preventDefault();
+      // Ensure queue is synced to hidden field
+      document.getElementById('video_inputs_json').value = JSON.stringify(videoQueue);
+      if (videoQueue.length === 0) {
+        showAsyncError('Please add at least one video to the queue.');
+        return;
+      }
       document.getElementById('async_result').style.display = 'none';
       document.getElementById('async_error').style.display = 'none';
       applyPreviewFontSize();
@@ -1778,6 +2109,17 @@ PAGE = """
         setPreviewFont(document.getElementById('caption_font_name').value);
         applyPreviewStyle();
         restartCaptionPreview(); // Renders the words and triggers animation
+
+        // Initialize video queue rendering
+        renderQueue();
+
+        // Enter key to add video
+        document.getElementById('video_input').addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            addVideo();
+          }
+        });
 
         // Restore latest output or poll job if needed
         if(initialJobId) pollJob(initialJobId);
@@ -1854,28 +2196,17 @@ ADVANCED_PAGE = """
         </div>
         <div class="card">
           <div class="title"><i class="fas fa-sliders"></i> 3. Output controls</div>
+          <div style="padding:8px 0; color:var(--primary); display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+            <i class="fas fa-microchip"></i> <strong>Whisper Large-v3</strong> <span style="color:var(--dim); font-size:0.85rem;">(Local Model)</span>
+          </div>
           <div class="row">
-            <div>
-              <label>Engine</label>
-              <select name="engine"><option value="assemblyai">AssemblyAI API</option><option value="whisper">Local Whisper</option></select>
-            </div>
-            <div>
-              <label>Whisper model</label>
-              <select name="model_name"><option value="base">Base</option><option value="small">Small</option><option value="medium">Medium</option></select>
-            </div>
             <div>
               <label>Aspect ratio</label>
               <select name="aspect_ratio" id="aspect_ratio"><option value="9:16">9:16 Shorts</option><option value="16:9">16:9 Landscape</option></select>
             </div>
-          </div>
-          <div class="row">
             <div>
               <label>Target seconds</label>
               <input name="target_duration" type="number" value="45" min="5" max="300">
-            </div>
-            <div>
-              <label>Language hint</label>
-              <input name="language" placeholder="th / en / blank">
             </div>
           </div>
           <label class="checkbox"><input type="checkbox" name="add_subtitles" checked> Add automatic subtitles after the advanced cut</label>
@@ -1989,7 +2320,7 @@ ADVANCED_PAGE = """
 
 @app.get("/")
 def index():
-    return render_template_string(PAGE, result=None, error=None, video_input="", job_id="")
+    return render_template_string(PAGE, result=None, error=None, video_input="[]", job_id="")
 
 
 from flask import Flask, abort, render_template_string, request, jsonify, send_file, url_for, send_from_directory
@@ -2032,7 +2363,8 @@ def serve_pro_static(filename):
 
 @app.get("/api/browse")
 def api_browse():
-    return jsonify({"file_path": utils.select_file_dialog()})
+    paths = utils.select_files_dialog()
+    return jsonify({"file_paths": paths})
 
 @app.post("/api/editor/export")
 def api_editor_export():
@@ -2171,11 +2503,10 @@ def process():
     try:
         params = _parse_process_form(request.form)
         job_id = _start_job(params)
-        return render_template_string(PAGE, result=None, error=None, video_input=params["video_input"], job_id=job_id)
+        return render_template_string(PAGE, result=None, error=None, video_input="", job_id=job_id)
     except Exception as e:
         traceback.print_exc()
-        video_input = request.form.get("video_input", "").strip().strip('"').strip("'")
-        return render_template_string(PAGE, result=None, error=str(e), video_input=video_input, job_id="")
+        return render_template_string(PAGE, result=None, error=str(e), video_input="", job_id="")
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5001, debug=False)

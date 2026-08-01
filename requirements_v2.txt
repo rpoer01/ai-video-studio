@@ -1,0 +1,35 @@
+# AI Video Studio Pro - Requirements
+
+# Core
+flask
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Video/Audio Processing
+moviepy
+imageio-ffmpeg
+opencv-python
+numpy
+librosa
+
+# AI/ML
+openai-whisper
+assemblyai
+openai
+
+# NLP
+pythainlp
+
+# Web Scraping
+yt-dlp
+requests
+
+# Database
+# sqlite3 (built-in)
+
+# Image Processing
+pillow
+
+# Utilities
+python-dotenv

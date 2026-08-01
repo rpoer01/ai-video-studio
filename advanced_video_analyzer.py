@@ -266,7 +266,6 @@ def _render_selected(selected: list[AdvancedCandidate], aspect_ratio: str) -> st
 def analyze_and_render(
     video_paths: list[str],
     brief: str,
-    model_name: str = "base",
     language: str | None = None,
     target_duration: float = 45.0,
     aspect_ratio: str = "9:16",
@@ -275,7 +274,6 @@ def analyze_and_render(
         raise ValueError("Add at least one video for Advanced Mode.")
 
     prompt_terms = set(_tokens(brief))
-    model = ai_models.get_whisper_model(model_name)
     all_candidates: list[AdvancedCandidate] = []
     sources = []
 
@@ -286,13 +284,9 @@ def analyze_and_render(
             duration = float(video.duration)
             audio_profile = _audio_profile(video)
         
-        print(f"[*] Analyzing source {index+1} with AssemblyAI...")
-        try:
-            transcript = ai_models.transcribe_with_assemblyai(video_path, language=language)
-        except Exception as e:
-            print(f"[!] AssemblyAI failed for source {index+1}, falling back to local Whisper: {e}")
-            model = ai_models.get_whisper_model(model_name)
-            transcript = model.transcribe(video_path, fp16=False, language=language or None, verbose=False)
+        print(f"[*] Analyzing source {index+1} with Whisper Large-v3...")
+        model = ai_models.get_whisper_model()
+        transcript = model.transcribe(video_path, fp16=False, word_timestamps=True, language=language or None, verbose=False)
             
         transcript_segments = transcript.get("segments", [])
         visual_profile = _visual_profile(video_path, duration)

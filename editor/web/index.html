@@ -93,16 +93,50 @@
                         <div class="pane-header">
                             <div>
                                 <h3>Subtitle</h3>
-                                <p>เลือกคลิปวิดีโอแล้วกดสร้างซับ</p>
+                                <p>เพิ่มวิดีโอหลายคลิป แล้วเรียงคิวใส่ซับอัตโนมัติ</p>
                             </div>
-                            <button id="auto-subtitle-btn" class="btn btn-primary">Auto Subtitle</button>
+                        </div>
+
+                        <div class="source-tabs" role="tablist">
+                            <button class="source-tab active" data-source="url" type="button">Online Link</button>
+                            <button class="source-tab" data-source="local" type="button">Local Drive</button>
+                        </div>
+
+                        <div class="source-pane active" data-source-pane="url">
+                            <label class="field">
+                                <span>Video URL (YouTube, Facebook, TikTok, ฯลฯ)</span>
+                                <input id="subtitle-url-input" type="url" placeholder="https://...">
+                            </label>
+                            <button id="subtitle-url-add-btn" class="btn btn-primary source-add-btn">Add to Queue</button>
+                        </div>
+
+                        <div class="source-pane" data-source-pane="local">
+                            <label class="file-btn btn btn-primary source-add-btn">
+                                เลือกไฟล์วิดีโอ (เลือกได้หลายไฟล์)
+                                <input id="subtitle-local-input" type="file" accept="video/*" multiple hidden>
+                            </label>
+                        </div>
+
+                        <div class="queue-header">
+                            <strong>Queue</strong>
+                            <span id="queue-count" class="queue-count">0 รายการ</span>
+                        </div>
+
+                        <div id="subtitle-queue-list" class="queue-list">
+                            <div class="queue-empty">ยังไม่มีคลิปในคิว</div>
+                        </div>
+
+                        <div class="queue-actions">
+                            <button id="subtitle-start-queue-btn" class="btn btn-primary" disabled>Start Queue</button>
+                            <button id="subtitle-clear-queue-btn" class="btn btn-ghost" disabled>Clear</button>
                         </div>
 
                         <div class="helper-card">
                             <strong>วิธีใช้</strong>
-                            <span>1. เลือกคลิปวิดีโอใน timeline</span>
-                            <span>2. กด Auto Subtitle</span>
-                            <span>3. ซับจะลง track แยกให้อัตโนมัติ</span>
+                            <span>1. เลือกแหล่งวิดีโอ (URL หรือไฟล์ในเครื่อง)</span>
+                            <span>2. เพิ่มวิดีโอเข้าคิวได้หลายคลิป</span>
+                            <span>3. กด Start Queue ระบบจะตัดซับทีละคลิป</span>
+                            <span>4. ซับจะลง Subtitle track ให้อัตโนมัติ</span>
                         </div>
                     </div>
 

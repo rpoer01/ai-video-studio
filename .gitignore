@@ -3,8 +3,13 @@ downloads/
 outputs/
 ffmpeg/
 fonts/
+uploads/
 *.mp4
 *.srt
 *.log
+*.db
 *_TEMP_MPY_*
 *TEMP_MPY*
+.opencode/
+node_modules/
+.env

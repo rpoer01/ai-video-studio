@@ -54,14 +54,26 @@ def download_required_fonts(target_dir="fonts"):
 def select_file_dialog():
     """Opens a native Windows file explorer to select a video file."""
     root = tk.Tk()
-    root.withdraw()  # Hide the main tkinter window
-    root.attributes("-topmost", True)  # Bring to front
+    root.withdraw()
+    root.attributes("-topmost", True)
     file_path = filedialog.askopenfilename(
         title="เลือกไฟล์วิดีโอ",
         filetypes=[("Video Files", "*.mp4 *.mkv *.avi *.mov *.flv *.wmv"), ("All Files", "*.*")]
     )
     root.destroy()
     return file_path
+
+def select_files_dialog():
+    """Opens a native Windows file explorer to select multiple video files."""
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    file_paths = filedialog.askopenfilenames(
+        title="เลือกไฟล์วิดีโอ (เลือกหลายไฟล์ได้)",
+        filetypes=[("Video Files", "*.mp4 *.mkv *.avi *.mov *.flv *.wmv"), ("All Files", "*.*")]
+    )
+    root.destroy()
+    return list(file_paths)
 
 if __name__ == "__main__":
     download_required_fonts()

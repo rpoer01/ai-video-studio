@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Video Studio Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .chat-container { height: calc(100vh - 200px); }
+        .message { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .typing-indicator span { animation: blink 1.4s infinite both; }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink { 0%, 80%, 100% { opacity: 0; } 40% { opacity: 1; } }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 p-4">
+        <div class="container mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold">AI Video Studio Pro</h1>
+                    <p class="text-xs text-gray-400">ระบบตัดต่อด้วย AI อัตโนมัติ</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <button id="healthBtn" class="px-3 py-1 bg-green-600 hover:bg-green-700 rounded text-sm">
+                    ✓ System OK
+                </button>
+                <button id="newProjectBtn" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg">
+                    + New Project
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="container mx-auto p-4 grid grid-cols-12 gap-4" style="height: calc(100vh - 80px);">
+        
+        <!-- Left Sidebar - Tools -->
+        <div class="col-span-2 bg-gray-800 rounded-xl p-4">
+            <h2 class="text-sm font-semibold text-gray-400 mb-4">TOOLS</h2>
+            <div class="space-y-2">
+                <button onclick="setTool('analyze')" class="tool-btn w-full text-left px-3 py-2 rounded-lg hover:bg-gray-700 flex items-center gap-2" data-tool="analyze">
+                    <span class="text-xl">🔍</span>
+                    <span>Analyze</span>
+                </button>
+                <button onclick="setTool('highlight')" class="tool-btn w-full text-left px-3 py-2 rounded-lg hover:bg-gray-700 flex items-center gap-2" data-tool="highlight">
+                    <span class="text-xl">⭐</span>
+                    <span>Highlights</span>
+                </button>
+                <button onclick="setTool('subtitle')" class="tool-btn w-full text-left px-3 py-2 rounded-lg hover:bg-gray-700 flex items-center gap-2" data-tool="subtitle">
+                    <span class="text-xl">📝</span>
+                    <span>Subtitles</span>
+                </button>
+                <button onclick="setTool('cut')" class="tool-btn w-full text-left px-3 py-2 rounded-lg hover:bg-gray-700 flex items-center gap-2" data-tool="cut">
+                    <span class="text-xl">✂️</span>
+                    <span>Cut Clip</span>
+                </button>
+                <button onclick="setTool('effect')" class="tool-btn w-full text-left px-3 py-2 rounded-lg hover:bg-gray-700 flex items-center gap-2" data-tool="effect">
+                    <span class="text-xl">🎨</span>
+                    <span>Effects</span>
+                </button>
+            </div>
+
+            <hr class="border-gray-700 my-4">
+
+            <h2 class="text-sm font-semibold text-gray-400 mb-4">PROJECTS</h2>
+            <div id="projectList" class="space-y-2 text-sm">
+                <p class="text-gray-500">No projects yet</p>
+            </div>
+        </div>
+
+        <!-- Center - Chat Area -->
+        <div class="col-span-7 bg-gray-800 rounded-xl flex flex-col">
+            <!-- Chat Messages -->
+            <div id="chatContainer" class="chat-container overflow-y-auto p-4 space-y-4">
+                <!-- Welcome Message -->
+                <div class="message flex gap-3">
+                    <div class="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span class="text-sm">AI</span>
+                    </div>
+                    <div class="bg-gray-700 rounded-2xl rounded-tl-none px-4 py-3 max-w-lg">
+                        <p>สวัสดีครับ! 👋</p>
+                        <p class="mt-2">ฉันเป็น AI Video Editor ช่วยคุณได้:</p>
+                        <ul class="mt-2 text-sm text-gray-300 space-y-1">
+                            <li>• วิเคราะห์วีดีโอ</li>
+                            <li>• หาไฮไลท์</li>
+                            <li>• ตัดคลิป</li>
+                            <li>• ใส่ซับไทเทิล</li>
+                            <li>• เพิ่มเอฟเฟกต์</li>
+                        </ul>
+                        <p class="mt-3 text-xs text-gray-400">ลองพิมพ์หรืออัปโหลดไฟล์ได้เลย!</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="p-4 border-t border-gray-700">
+                <!-- File Upload Preview -->
+                <div id="filePreview" class="hidden mb-3 p-3 bg-gray-700 rounded-lg flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="text-2xl">🎬</span>
+                        <span id="fileName">video.mp4</span>
+                        <span id="fileSize" class="text-xs text-gray-400">(0 MB)</span>
+                    </div>
+                    <button onclick="clearFile()" class="text-gray-400 hover:text-white">✕</button>
+                </div>
+
+                <!-- Input -->
+                <div class="flex gap-2">
+                    <label class="px-4 py-3 bg-gray-700 hover:bg-gray-600 rounded-xl cursor-pointer flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                        </svg>
+                        <input type="file" id="fileInput" accept="video/*,audio/*,image/*" class="hidden" onchange="handleFileSelect(event)">
+                        <span class="text-sm">Upload</span>
+                    </label>
+                    <input type="text" id="chatInput" placeholder="พิมพ์คำสั่ง... (เช่น ช่วยวิเคราะห์วีดีโอนี้)" 
+                        class="flex-1 px-4 py-3 bg-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        onkeypress="if(event.key==='Enter')sendMessage()">
+                    <button onclick="sendMessage()" class="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-xl font-semibold">
+                        Send
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Sidebar - Preview -->
+        <div class="col-span-3 bg-gray-800 rounded-xl p-4">
+            <h2 class="text-sm font-semibold text-gray-400 mb-4">PREVIEW</h2>
+            
+            <!-- Video Preview -->
+            <div id="videoPreview" class="aspect-video bg-gray-900 rounded-lg flex items-center justify-center mb-4">
+                <p class="text-gray-500 text-sm">Upload video to preview</p>
+            </div>
+
+            <!-- Analysis Results -->
+            <div id="analysisResults" class="hidden space-y-3">
+                <h3 class="font-semibold text-sm">Analysis Results</h3>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Duration:</span>
+                        <span id="duration">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Mood:</span>
+                        <span id="mood">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Highlights:</span>
+                        <span id="highlightCount">--</span>
+                    </div>
+                </div>
+
+                <!-- Highlights List -->
+                <h3 class="font-semibold text-sm mt-4">Highlights</h3>
+                <div id="highlightsList" class="space-y-2 max-h-40 overflow-y-auto">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Project Modal -->
+    <div id="newProjectModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-xl p-6 w-96">
+            <h2 class="text-xl font-bold mb-4">New Project</h2>
+            <input type="text" id="projectName" placeholder="Project name" class="w-full px-4 py-2 bg-gray-700 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-purple-500">
+            <textarea id="projectDesc" placeholder="Description (optional)" class="w-full px-4 py-2 bg-gray-700 rounded-lg mb-4 h-20 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"></textarea>
+            <div class="flex gap-2 justify-end">
+                <button onclick="closeModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">Cancel</button>
+                <button onclick="createProject()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let currentTool = 'analyze';
+        let selectedFile = null;
+        let currentProject = null;
+
+        // API Base URL
+        const API_BASE = 'http://localhost:8000/api';
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            checkHealth();
+            loadProjects();
+            setTool('analyze');
+        });
+
+        // Health Check
+        async function checkHealth() {
+            try {
+                const res = await fetch(`${API_BASE}/health`);
+                const data = await res.json();
+                document.getElementById('healthBtn').textContent = '✓ System OK';
+                document.getElementById('healthBtn').classList.remove('bg-red-600');
+                document.getElementById('healthBtn').classList.add('bg-green-600');
+            } catch (e) {
+                document.getElementById('healthBtn').textContent = '✕ Offline';
+                document.getElementById('healthBtn').classList.remove('bg-green-600');
+                document.getElementById('healthBtn').classList.add('bg-red-600');
+            }
+        }
+
+        // Set Tool
+        function setTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.tool-btn').forEach(btn => {
+                btn.classList.remove('bg-gray-700');
+                if (btn.dataset.tool === tool) {
+                    btn.classList.add('bg-gray-700');
+                }
+            });
+        }
+
+        // Handle File Select
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                selectedFile = file;
+                document.getElementById('fileName').textContent = file.name;
+                document.getElementById('fileSize').textContent = `(${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+                document.getElementById('filePreview').classList.remove('hidden');
+                
+                // Show video preview
+                const videoPreview = document.getElementById('videoPreview');
+                videoPreview.innerHTML = `<video class="w-full h-full rounded-lg" controls src="${URL.createObjectURL(file)}"></video>`;
+            }
+        }
+
+        // Clear File
+        function clearFile() {
+            selectedFile = null;
+            document.getElementById('filePreview').classList.add('hidden');
+            document.getElementById('fileInput').value = '';
+            document.getElementById('videoPreview').innerHTML = '<p class="text-gray-500 text-sm">Upload video to preview</p>';
+        }
+
+        // Send Message
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (!message && !selectedFile) return;
+
+            // Add user message
+            addMessage('user', message || `Uploaded: ${selectedFile?.name}`);
+            input.value = '';
+
+            // Upload file if selected
+            let videoPath = null;
+            if (selectedFile) {
+                videoPath = await uploadFile(selectedFile);
+            }
+
+            // Show typing indicator
+            const typingId = addTypingIndicator();
+
+            try {
+                // Send to API
+                const res = await fetch(`${API_BASE}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: message,
+                        video_path: videoPath
+                    })
+                });
+                const data = await res.json();
+
+                // Remove typing indicator
+                removeTypingIndicator(typingId);
+
+                // Add AI response
+                addMessage('ai', data.response);
+
+                // Show suggestions
+                if (data.suggestions && data.suggestions.length > 0) {
+                    addSuggestions(data.suggestions);
+                }
+
+            } catch (e) {
+                removeTypingIndicator(typingId);
+                addMessage('ai', 'เกิดข้อผิดพลาด กรุณาลองใหม่');
+            }
+        }
+
+        // Upload File
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                return data.file_path;
+            } catch (e) {
+                console.error('Upload failed:', e);
+                return null;
+            }
+        }
+
+        // Add Message
+        function addMessage(role, content) {
+            const container = document.getElementById('chatContainer');
+            const isUser = role === 'user';
+            
+            const messageHtml = `
+                <div class="message flex gap-3 ${isUser ? 'flex-row-reverse' : ''}">
+                    <div class="w-8 h-8 ${isUser ? 'bg-blue-600' : 'bg-gradient-to-br from-purple-500 to-pink-500'} rounded-full flex items-center justify-center flex-shrink-0">
+                        <span class="text-sm">${isUser ? 'You' : 'AI'}</span>
+                    </div>
+                    <div class="${isUser ? 'bg-blue-600 rounded-2xl rounded-tr-none' : 'bg-gray-700 rounded-2xl rounded-tl-none'} px-4 py-3 max-w-lg">
+                        <p class="whitespace-pre-wrap">${content}</p>
+                    </div>
+                </div>
+            `;
+            
+            container.insertAdjacentHTML('beforeend', messageHtml);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Add Typing Indicator
+        function addTypingIndicator() {
+            const container = document.getElementById('chatContainer');
+            const id = 'typing-' + Date.now();
+            
+            const html = `
+                <div id="${id}" class="message flex gap-3">
+                    <div class="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span class="text-sm">AI</span>
+                    </div>
+                    <div class="bg-gray-700 rounded-2xl rounded-tl-none px-4 py-3">
+                        <div class="typing-indicator flex gap-1">
+                            <span class="w-2 h-2 bg-gray-400 rounded-full"></span>
+                            <span class="w-2 h-2 bg-gray-400 rounded-full"></span>
+                            <span class="w-2 h-2 bg-gray-400 rounded-full"></span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            container.insertAdjacentHTML('beforeend', html);
+            container.scrollTop = container.scrollHeight;
+            return id;
+        }
+
+        // Remove Typing Indicator
+        function removeTypingIndicator(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        }
+
+        // Add Suggestions
+        function addSuggestions(suggestions) {
+            const container = document.getElementById('chatContainer');
+            const html = `
+                <div class="flex gap-2 flex-wrap pl-11">
+                    ${suggestions.map(s => `
+                        <button onclick="useSuggestion('${s}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded-full text-sm text-gray-300">
+                            ${s}
+                        </button>
+                    `).join('')}
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', html);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Use Suggestion
+        function useSuggestion(text) {
+            document.getElementById('chatInput').value = text;
+            sendMessage();
+        }
+
+        // Load Projects
+        async function loadProjects() {
+            try {
+                const res = await fetch(`${API_BASE}/projects`);
+                const data = await res.json();
+                
+                const list = document.getElementById('projectList');
+                if (data.projects && data.projects.length > 0) {
+                    list.innerHTML = data.projects.map(p => `
+                        <div class="p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600" onclick="selectProject('${p.id}')">
+                            ${p.name}
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error('Failed to load projects:', e);
+            }
+        }
+
+        // Create Project
+        async function createProject() {
+            const name = document.getElementById('projectName').value.trim();
+            const desc = document.getElementById('projectDesc').value.trim();
+            
+            if (!name) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/projects?name=${encodeURIComponent(name)}&description=${encodeURIComponent(desc)}`, {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                
+                closeModal();
+                loadProjects();
+                addMessage('ai', `สร้างโปรเจค "${name}" เรียบร้อยแล้ว!`);
+            } catch (e) {
+                addMessage('ai', 'ไม่สามารถสร้างโปรเจคได้');
+            }
+        }
+
+        // Select Project
+        function selectProject(projectId) {
+            currentProject = projectId;
+            addMessage('ai', `เลือกโปรเจคแล้ว สามารถเริ่มทำงานได้เลย!`);
+        }
+
+        // Modal
+        function openModal() {
+            document.getElementById('newProjectModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('newProjectModal').classList.add('hidden');
+            document.getElementById('projectName').value = '';
+            document.getElementById('projectDesc').value = '';
+        }
+
+        // Event Listeners
+        document.getElementById('newProjectBtn').addEventListener('click', openModal);
+    </script>
+</body>
+</html>

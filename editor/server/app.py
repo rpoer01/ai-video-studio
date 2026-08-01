@@ -20,6 +20,11 @@ try:
 except Exception:
     aai = None
 
+try:
+    import yt_dlp
+except Exception:
+    yt_dlp = None
+
 from editor.server.services.render_service import render_project
 from editor.server.services.subtitle_segmenter import join_tokens, segment_words
 
@@ -199,6 +204,60 @@ def realtime_stream():
             SYNC_CLIENTS.discard(client)
 
     return Response(events(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.route("/api/media/import-url", methods=["POST"])
+def import_url_media():
+    if yt_dlp is None:
+        return jsonify({"error": "yt-dlp is not installed on the server."}), 500
+
+    payload = request.get_json(force=True, silent=True) or {}
+    url = (payload.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "Missing url"}), 400
+
+    media_id = uuid.uuid4().hex[:12]
+    output_template = str(UPLOAD_DIR / f"{media_id}.%(ext)s")
+
+    ydl_opts = {
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "outtmpl": output_template,
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "merge_output_format": "mp4",
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            downloaded_path = ydl.prepare_filename(info)
+    except Exception as exc:
+        return jsonify({"error": f"Download failed: {exc}", "trace": traceback.format_exc()}), 500
+
+    path = Path(downloaded_path)
+    if not path.exists():
+        candidates = sorted(UPLOAD_DIR.glob(f"{media_id}.*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not candidates:
+            return jsonify({"error": "Download succeeded but file is missing."}), 500
+        path = candidates[0]
+
+    saved_name = path.name
+    title = info.get("title") or path.stem
+    mime_type = mimetypes.guess_type(saved_name)[0] or "video/mp4"
+    kind = infer_media_kind(saved_name, mime_type)
+    asset = {
+        "id": media_id,
+        "name": title,
+        "filename": saved_name,
+        "path": str(path),
+        "url": f"/editor/uploads/{saved_name}",
+        "kind": kind,
+        "mimeType": mime_type,
+        "size": path.stat().st_size,
+    }
+    publish_sync("asset_uploaded", {"asset": asset})
+    return jsonify(asset)
 
 
 @app.route("/api/media/upload", methods=["POST"])

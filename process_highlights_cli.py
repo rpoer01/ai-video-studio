@@ -12,7 +12,6 @@ if sys.stdout.encoding != 'utf-8':
 def main():
     parser = argparse.ArgumentParser(description="AI Highlight Cutter with Thai Language Support")
     parser.add_argument("input", help="Video path or URL")
-    parser.add_argument("--model", default="base", help="Whisper model (tiny, base, small, medium, large)")
     parser.add_argument("--audio-threshold", type=float, default=2.5, help="Audio peak threshold factor")
     parser.add_argument("--aspect-ratio", default="9:16", choices=["9:16", "16:9"], help="Output aspect ratio")
     parser.add_argument("--max-duration", type=float, default=60.0, help="Target highlight length in seconds")
@@ -38,8 +37,8 @@ def main():
         return
 
     # 2. Transcription
-    print(f"[*] Loading Whisper model '{args.model}'...")
-    model = ai_models.get_whisper_model(args.model)
+    print(f"[*] Loading Whisper Large-v3...")
+    model = ai_models.get_whisper_model()
     
     print("[*] Transcribing video for keyword detection...")
     result = model.transcribe(video_path, fp16=False)

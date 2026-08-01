@@ -16,6 +16,15 @@ export async function uploadMedia(file) {
     return parseResponse(response);
 }
 
+export async function importMediaFromUrl(url) {
+    const response = await fetch("/api/media/import-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+    });
+    return parseResponse(response);
+}
+
 export async function saveProject(project) {
     const response = await fetch("/api/project/save", {
         method: "POST",

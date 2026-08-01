@@ -98,14 +98,10 @@ def log(msg):
 def process_video(video_path):
     log(f"--- กำลังเริ่มประมวลผลไฟล์: {video_path} ---")
     
-    # 1. Transcribe with AssemblyAI
-    log("1. กำลังโหลด AI Model (AssemblyAI Pro)...")
-    try:
-        result = ai_models.transcribe_with_assemblyai(video_path)
-    except Exception as e:
-        log(f"   ! AssemblyAI ล้มเหลว: {e}. กำลังสลับไปใช้ Whisper (base)...")
-        model = ai_models.get_whisper_model("base")
-        result = model.transcribe(video_path, fp16=False, word_timestamps=True, verbose=False)
+    # 1. Transcribe with Whisper Large-v3
+    log("1. กำลังโหลด AI Model (Whisper Large-v3)...")
+    model = ai_models.get_whisper_model()
+    result = model.transcribe(video_path, fp16=False, word_timestamps=True, verbose=False)
     
     segments = result['segments']
     entries = build_word_entries(segments)

@@ -1,6 +1,7 @@
 import {
     connectRealtime,
     exportProject,
+    importMediaFromUrl,
     listProjects,
     loadProject,
     requestAutoSubtitle,
@@ -90,6 +91,15 @@ const refs = {
     mediaUploadInput: document.getElementById("media-upload-input"),
     addTextBtn: document.getElementById("add-text-btn"),
     autoSubtitleBtn: document.getElementById("auto-subtitle-btn"),
+    sourceTabs: Array.from(document.querySelectorAll(".source-tab")),
+    sourcePanes: Array.from(document.querySelectorAll(".source-pane")),
+    subtitleUrlInput: document.getElementById("subtitle-url-input"),
+    subtitleUrlAddBtn: document.getElementById("subtitle-url-add-btn"),
+    subtitleLocalInput: document.getElementById("subtitle-local-input"),
+    subtitleQueueList: document.getElementById("subtitle-queue-list"),
+    queueCount: document.getElementById("queue-count"),
+    subtitleStartBtn: document.getElementById("subtitle-start-queue-btn"),
+    subtitleClearBtn: document.getElementById("subtitle-clear-queue-btn"),
     splitBtn: document.getElementById("split-btn"),
     duplicateBtn: document.getElementById("duplicate-btn"),
     groupBtn: document.getElementById("group-btn"),
@@ -108,6 +118,8 @@ const state = {
     lastFrameTime: 0,
     activeTab: "media",
     clientId: uid("client"),
+    subtitleQueue: [],
+    queueProcessing: false,
 };
 
 const TEXT_PRESETS = {
@@ -527,6 +539,168 @@ const app = {
     },
 };
 
+const queueManager = {
+    setSource(source) {
+        refs.sourceTabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.source === source));
+        refs.sourcePanes.forEach((pane) => pane.classList.toggle("active", pane.dataset.sourcePane === source));
+    },
+    addUrlItem() {
+        const url = (refs.subtitleUrlInput.value || "").trim();
+        if (!url) {
+            app.status("กรุณาใส่ URL ก่อน");
+            return;
+        }
+        const display = url.length > 48 ? `${url.slice(0, 45)}…` : url;
+        state.subtitleQueue.push({
+            id: uid("queue"),
+            kind: "url",
+            label: display,
+            detail: "รอดาวน์โหลด",
+            status: "pending",
+            url,
+        });
+        refs.subtitleUrlInput.value = "";
+        queueManager.render();
+        app.status("เพิ่ม URL เข้าคิวแล้ว");
+    },
+    addLocalItems(files) {
+        const list = Array.from(files || []);
+        if (!list.length) {
+            return;
+        }
+        list.forEach((file) => {
+            state.subtitleQueue.push({
+                id: uid("queue"),
+                kind: "file",
+                label: file.name,
+                detail: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+                status: "pending",
+                file,
+            });
+        });
+        queueManager.render();
+        app.status(`เพิ่มไฟล์เข้าคิว ${list.length} รายการ`);
+    },
+    removeItem(itemId) {
+        const item = state.subtitleQueue.find((entry) => entry.id === itemId);
+        if (!item || item.status === "processing") {
+            return;
+        }
+        state.subtitleQueue = state.subtitleQueue.filter((entry) => entry.id !== itemId);
+        queueManager.render();
+    },
+    clearFinished() {
+        if (state.queueProcessing) {
+            return;
+        }
+        state.subtitleQueue = state.subtitleQueue.filter((entry) => entry.status === "pending");
+        queueManager.render();
+    },
+    updateItem(itemId, patch) {
+        const item = state.subtitleQueue.find((entry) => entry.id === itemId);
+        if (!item) {
+            return;
+        }
+        Object.assign(item, patch);
+        queueManager.render();
+    },
+    render() {
+        const list = refs.subtitleQueueList;
+        list.innerHTML = "";
+        if (!state.subtitleQueue.length) {
+            const empty = document.createElement("div");
+            empty.className = "queue-empty";
+            empty.textContent = "ยังไม่มีคลิปในคิว";
+            list.appendChild(empty);
+        } else {
+            state.subtitleQueue.forEach((item, index) => {
+                const node = document.createElement("div");
+                node.className = "queue-item";
+                node.dataset.status = item.status;
+                const statusLabel =
+                    item.status === "pending"
+                        ? "รอ"
+                        : item.status === "processing"
+                            ? "กำลังทำ"
+                            : item.status === "done"
+                                ? "เสร็จ"
+                                : "ผิดพลาด";
+                const tone = item.status === "done" ? "ok" : item.status === "error" ? "err" : "";
+                node.innerHTML = `
+                    <div class="queue-index">${item.status === "done" ? "✓" : item.status === "error" ? "!" : index + 1}</div>
+                    <div class="queue-info">
+                        <div class="queue-name">${item.label || ""}</div>
+                        <div class="queue-meta" ${tone ? `data-tone="${tone}"` : ""}>${statusLabel} · ${item.detail || ""}</div>
+                    </div>
+                    <button class="queue-remove" type="button" title="ลบ" ${item.status === "processing" ? "disabled" : ""}>×</button>
+                `;
+                node.querySelector(".queue-remove").addEventListener("click", () => queueManager.removeItem(item.id));
+                list.appendChild(node);
+            });
+        }
+        const pendingCount = state.subtitleQueue.filter((item) => item.status === "pending").length;
+        const hasProcessing = state.subtitleQueue.some((item) => item.status === "processing");
+        refs.queueCount.textContent = `${state.subtitleQueue.length} รายการ`;
+        refs.subtitleStartBtn.disabled = state.queueProcessing || pendingCount === 0;
+        refs.subtitleStartBtn.textContent = hasProcessing || state.queueProcessing ? "กำลังทำคิว..." : `Start Queue (${pendingCount})`;
+        refs.subtitleClearBtn.disabled = state.queueProcessing || !state.subtitleQueue.some((item) => item.status !== "pending");
+    },
+    async processQueue() {
+        if (state.queueProcessing) {
+            return;
+        }
+        const pending = state.subtitleQueue.filter((item) => item.status === "pending");
+        if (!pending.length) {
+            app.status("คิวว่าง");
+            return;
+        }
+        state.queueProcessing = true;
+        queueManager.render();
+        app.status(`เริ่มทำคิว ${pending.length} คลิป...`);
+
+        for (let index = 0; index < pending.length; index += 1) {
+            const item = pending[index];
+            queueManager.updateItem(item.id, { status: "processing", detail: "กำลังเตรียมไฟล์..." });
+            try {
+                const asset = item.kind === "url"
+                    ? await importMediaFromUrl(item.url)
+                    : await uploadMedia(item.file);
+                if (!state.project.assets.some((entry) => entry.id === asset.id)) {
+                    state.project.assets.push(asset);
+                }
+                const videoClip = app.insertAssetAutomatically(asset);
+                queueManager.updateItem(item.id, { detail: "กำลังถอดเสียง..." });
+                const payload = await requestAutoSubtitle(asset.path);
+                const subtitleTrack = app.defaultTrackForKind("subtitle");
+                const offset = videoClip ? Number(videoClip.start || 0) : 0;
+                subtitleTrack.clips = subtitleTrack.clips.concat(
+                    payload.clips.map((clip) => ({
+                        ...clip,
+                        start: offset + Number(clip.start || 0),
+                        type: "subtitle",
+                    })),
+                );
+                queueManager.updateItem(item.id, {
+                    status: "done",
+                    detail: `ซับ ${payload.clips.length} ชิ้น`,
+                });
+                app.status(`ตัดคลิปที่ ${index + 1}/${pending.length} เสร็จ (${payload.clips.length} ซับ)`);
+                app.render();
+            } catch (error) {
+                queueManager.updateItem(item.id, {
+                    status: "error",
+                    detail: error.message || "เกิดข้อผิดพลาด",
+                });
+                app.status(`คลิปที่ ${index + 1} ล้มเหลว: ${error.message}`);
+            }
+        }
+
+        state.queueProcessing = false;
+        queueManager.render();
+        app.status("คิวทำงานเสร็จแล้ว");
+    },
+};
+
 function renderAssets() {
     refs.assetList.innerHTML = "";
     state.project.assets.forEach((asset) => {
@@ -701,13 +875,32 @@ function bindEvents() {
             }
         });
     });
-    refs.autoSubtitleBtn.addEventListener("click", async () => {
-        try {
-            await app.runAutoSubtitle();
-        } catch (error) {
-            app.status(error.message);
+    if (refs.autoSubtitleBtn) {
+        refs.autoSubtitleBtn.addEventListener("click", async () => {
+            try {
+                await app.runAutoSubtitle();
+            } catch (error) {
+                app.status(error.message);
+            }
+        });
+    }
+    refs.sourceTabs.forEach((tab) => {
+        tab.addEventListener("click", () => queueManager.setSource(tab.dataset.source));
+    });
+    refs.subtitleUrlAddBtn.addEventListener("click", () => queueManager.addUrlItem());
+    refs.subtitleUrlInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            queueManager.addUrlItem();
         }
     });
+    refs.subtitleLocalInput.addEventListener("change", (event) => {
+        const files = Array.from(event.target.files || []);
+        refs.subtitleLocalInput.value = "";
+        queueManager.addLocalItems(files);
+    });
+    refs.subtitleStartBtn.addEventListener("click", () => queueManager.processQueue());
+    refs.subtitleClearBtn.addEventListener("click", () => queueManager.clearFinished());
     refs.exportBtn.addEventListener("click", async () => {
         try {
             await app.exportCurrentProject();
@@ -786,4 +979,6 @@ bindEvents();
 bindRealtime();
 app.setActiveTab("media");
 updatePlayButton();
+queueManager.setSource("url");
+queueManager.render();
 app.render();
