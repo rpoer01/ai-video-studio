@@ -1,5 +1,6 @@
 flask
 imageio-ffmpeg
+librosa
 moviepy
 numpy
 opencv-python
